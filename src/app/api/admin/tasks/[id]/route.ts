@@ -4,10 +4,11 @@ import { prisma } from '@/lib/db'
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const task = await getTaskById(params.id)
+    const { id } = await params
+    const task = await getTaskById(id)
 
     if (!task) {
       return NextResponse.json({ error: 'Task not found' }, { status: 404 })
@@ -22,13 +23,14 @@ export async function GET(
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const body = await request.json()
     const { status, solution, selectedProfile } = body
 
-    const task = await getTaskById(params.id)
+    const task = await getTaskById(id)
     if (!task) {
       return NextResponse.json({ error: 'Task not found' }, { status: 404 })
     }
@@ -37,7 +39,7 @@ export async function PATCH(
     if (task.taskType === 'CAPTCHA' && solution) {
       // Store solution for scraper to use
       await prisma.enrichmentTask.update({
-        where: { id: params.id },
+        where: { id },
         data: {
           payload: { ...(task.payload as any), solution },
           status: 'COMPLETED',
@@ -59,9 +61,9 @@ export async function PATCH(
         })
       }
 
-      await updateTaskStatus(params.id, 'COMPLETED')
+      await updateTaskStatus(id, 'COMPLETED')
     } else {
-      await updateTaskStatus(params.id, status)
+      await updateTaskStatus(id, status)
     }
 
     return NextResponse.json({ success: true })

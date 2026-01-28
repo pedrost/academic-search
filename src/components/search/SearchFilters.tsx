@@ -67,11 +67,11 @@ export function SearchFilters({ filters, onFilterChange, onSearch }: Props) {
             Área de Pesquisa
           </label>
           <Select
-            value={filters.researchField || ''}
+            value={filters.researchField || 'all'}
             onValueChange={(value) =>
               onFilterChange({
                 ...filters,
-                researchField: value || undefined,
+                researchField: value === 'all' ? undefined : value,
               })
             }
           >
@@ -79,7 +79,7 @@ export function SearchFilters({ filters, onFilterChange, onSearch }: Props) {
               <SelectValue placeholder="Todas as áreas" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">Todas as áreas</SelectItem>
+              <SelectItem value="all">Todas as áreas</SelectItem>
               {RESEARCH_FIELDS.map((field) => (
                 <SelectItem key={field} value={field}>
                   {field}
@@ -114,16 +114,16 @@ export function SearchFilters({ filters, onFilterChange, onSearch }: Props) {
         <div>
           <label className="text-sm font-medium mb-2 block">Cidade Atual</label>
           <Select
-            value={filters.currentCity || ''}
+            value={filters.currentCity || 'all'}
             onValueChange={(value) =>
-              onFilterChange({ ...filters, currentCity: value || undefined })
+              onFilterChange({ ...filters, currentCity: value === 'all' ? undefined : value })
             }
           >
             <SelectTrigger>
               <SelectValue placeholder="Todas as cidades" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">Todas as cidades</SelectItem>
+              <SelectItem value="all">Todas as cidades</SelectItem>
               {MS_CITIES.map((city) => (
                 <SelectItem key={city} value={city}>
                   {city}

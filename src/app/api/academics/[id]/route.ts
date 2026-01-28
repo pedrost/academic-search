@@ -3,10 +3,11 @@ import { getAcademicById } from '@/lib/db/academics'
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const academic = await getAcademicById(params.id)
+    const { id } = await params
+    const academic = await getAcademicById(id)
 
     if (!academic) {
       return NextResponse.json(
