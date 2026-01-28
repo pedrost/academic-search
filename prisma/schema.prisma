@@ -1,0 +1,132 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum DegreeLevel {
+  MASTERS
+  PHD
+  POSTDOC
+}
+
+enum Sector {
+  ACADEMIA
+  GOVERNMENT
+  PRIVATE
+  NGO
+  UNKNOWN
+}
+
+enum EnrichmentStatus {
+  PENDING
+  PARTIAL
+  COMPLETE
+}
+
+enum TaskType {
+  CAPTCHA
+  LINKEDIN_MATCH
+  LOGIN_EXPIRED
+  MANUAL_REVIEW
+}
+
+enum TaskStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  SKIPPED
+}
+
+enum ScraperSource {
+  SUCUPIRA
+  LATTES
+  LINKEDIN
+}
+
+enum ScraperStatus {
+  RUNNING
+  PAUSED
+  WAITING_INTERVENTION
+  COMPLETED
+  FAILED
+}
+
+model Academic {
+  id               String           @id @default(cuid())
+  name             String
+  email            String?
+  researchField    String?          @map("research_field")
+  degreeLevel      DegreeLevel?     @map("degree_level")
+  graduationYear   Int?             @map("graduation_year")
+  institution      String?
+  currentCity      String?          @map("current_city")
+  currentState     String?          @map("current_state")
+  currentSector    Sector           @default(UNKNOWN) @map("current_sector")
+  currentJobTitle  String?          @map("current_job_title")
+  currentCompany   String?          @map("current_company")
+  linkedinUrl      String?          @map("linkedin_url")
+  lattesUrl        String?          @map("lattes_url")
+  enrichmentStatus EnrichmentStatus @default(PENDING) @map("enrichment_status")
+  lastEnrichedAt   DateTime?        @map("last_enriched_at")
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
+
+  dissertations    Dissertation[]
+  enrichmentTasks  EnrichmentTask[]
+
+  @@map("academics")
+}
+
+model Dissertation {
+  id           String   @id @default(cuid())
+  academicId   String   @map("academic_id")
+  title        String
+  abstract     String?
+  keywords     String[]
+  defenseYear  Int      @map("defense_year")
+  institution  String
+  program      String?
+  advisorName  String?  @map("advisor_name")
+  sourceUrl    String?  @map("source_url")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  academic     Academic @relation(fields: [academicId], references: [id], onDelete: Cascade)
+
+  @@map("dissertations")
+}
+
+model EnrichmentTask {
+  id          String     @id @default(cuid())
+  academicId  String?    @map("academic_id")
+  taskType    TaskType   @map("task_type")
+  status      TaskStatus @default(PENDING)
+  payload     Json?
+  assignedTo  String?    @map("assigned_to")
+  priority    Int        @default(0)
+  createdAt   DateTime   @default(now()) @map("created_at")
+  completedAt DateTime?  @map("completed_at")
+
+  academic    Academic?  @relation(fields: [academicId], references: [id], onDelete: Cascade)
+
+  @@index([status, priority])
+  @@map("enrichment_tasks")
+}
+
+model ScraperSession {
+  id              String        @id @default(cuid())
+  source          ScraperSource
+  status          ScraperStatus @default(RUNNING)
+  profilesScraped Int           @default(0) @map("profiles_scraped")
+  tasksCreated    Int           @default(0) @map("tasks_created")
+  errors          Int           @default(0)
+  lastActivityAt  DateTime      @default(now()) @map("last_activity_at")
+  metadata        Json?
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  @@map("scraper_sessions")
+}
