@@ -6,6 +6,16 @@ import { Badge } from '@/components/ui/badge'
 import { ScraperSession } from '@prisma/client'
 import { formatDistanceToNow } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
+import { Button } from '@/components/ui/button'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { useState } from 'react'
+import { MS_INSTITUTIONS } from '@/lib/constants'
 
 const STATUS_VARIANTS: Record<string, 'default' | 'secondary' | 'outline' | 'destructive'> = {
   RUNNING: 'default',
@@ -39,6 +49,27 @@ export function ScraperStatus() {
     refetchInterval: 5000,
   })
 
+  const [selectedInstitution, setSelectedInstitution] = useState(MS_INSTITUTIONS[0])
+  const [isStarting, setIsStarting] = useState(false)
+
+  const startScraper = async () => {
+    setIsStarting(true)
+    try {
+      await fetch('/api/admin/scrapers/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          source: 'SUCUPIRA',
+          institution: selectedInstitution,
+        }),
+      })
+    } catch (err) {
+      console.error('Failed to start scraper:', err)
+    } finally {
+      setIsStarting(false)
+    }
+  }
+
   if (isLoading) {
     return <div>Carregando...</div>
   }
@@ -47,6 +78,39 @@ export function ScraperStatus() {
 
   return (
     <div className="space-y-4">
+      <Card className="mb-4">
+        <CardHeader>
+          <CardTitle>Iniciar Scraper</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex gap-4 items-end">
+            <div className="flex-1">
+              <label className="text-sm font-medium mb-2 block">
+                Instituição
+              </label>
+              <Select
+                value={selectedInstitution}
+                onValueChange={setSelectedInstitution}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {MS_INSTITUTIONS.map((inst) => (
+                    <SelectItem key={inst} value={inst}>
+                      {inst}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button onClick={startScraper} disabled={isStarting}>
+              {isStarting ? 'Iniciando...' : 'Iniciar Sucupira'}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader>
           <CardTitle>Scrapers Ativos</CardTitle>
