@@ -6,6 +6,7 @@ export async function getBrowser(): Promise<Browser> {
   if (!browserInstance) {
     browserInstance = await chromium.launch({
       headless: false,
+      channel: 'chrome', // Use system Chrome instead of downloading Chromium
       args: [
         '--disable-blink-features=AutomationControlled',
         '--no-sandbox',
