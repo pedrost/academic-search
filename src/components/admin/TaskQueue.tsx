@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -15,6 +16,7 @@ import {
 import { TaskWithAcademic } from '@/types'
 import { formatDistanceToNow } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
+import { TaskResolver } from './TaskResolver'
 
 const TASK_TYPE_LABELS: Record<string, string> = {
   CAPTCHA: 'CAPTCHA',
@@ -53,6 +55,7 @@ async function updateTask(id: string, status: string) {
 
 export function TaskQueue() {
   const queryClient = useQueryClient()
+  const [selectedTask, setSelectedTask] = useState<TaskWithAcademic | null>(null)
 
   const { data, isLoading } = useQuery({
     queryKey: ['admin-tasks'],
@@ -150,11 +153,12 @@ export function TaskQueue() {
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() =>
+                          onClick={() => {
                             mutation.mutate({ id: task.id, status: 'IN_PROGRESS' })
-                          }
+                            setSelectedTask(task)
+                          }}
                         >
-                          Iniciar
+                          Resolver
                         </Button>
                       )}
                       {task.status === 'IN_PROGRESS' && (
@@ -186,6 +190,14 @@ export function TaskQueue() {
           )}
         </CardContent>
       </Card>
+
+      {selectedTask && (
+        <TaskResolver
+          task={selectedTask}
+          open={!!selectedTask}
+          onClose={() => setSelectedTask(null)}
+        />
+      )}
     </div>
   )
 }
