@@ -6,8 +6,8 @@ import { QueryProvider } from '@/components/providers/QueryProvider'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'Hunter - Academic Search',
-  description: 'Find academic experts in Mato Grosso do Sul',
+  title: 'Busca de Acadêmicos',
+  description: 'Encontre especialistas acadêmicos no Mato Grosso do Sul',
 }
 
 export default function RootLayout({

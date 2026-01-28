@@ -12,7 +12,7 @@ export default function AdminLayout({
           <div className="flex h-16 items-center justify-between">
             <div className="flex items-center gap-8">
               <Link href="/admin" className="text-xl font-bold">
-                Hunter Admin
+                Painel Administrativo
               </Link>
               <div className="flex gap-4">
                 <Link

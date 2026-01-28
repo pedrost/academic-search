@@ -49,7 +49,7 @@ export default function HomePage() {
   return (
     <main className="min-h-screen bg-gray-50">
       <div className="container mx-auto py-8">
-        <h1 className="text-3xl font-bold mb-8">Hunter - Busca de Acadêmicos</h1>
+        <h1 className="text-3xl font-bold mb-8">Busca de Acadêmicos</h1>
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
           <aside className="md:col-span-1">
