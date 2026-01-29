@@ -142,6 +142,10 @@ export async function upsertAcademic(
       hasUpdates = true
     }
 
+    // NOTE: enrichmentStatus is intentionally NOT updated here
+    // Only the LinkedIn worker should change enrichmentStatus (PENDING -> PARTIAL/COMPLETE)
+    // Scrapers should never overwrite enrichment progress
+
     if (hasUpdates) {
       await prisma.academic.update({
         where: { id: existing.id },
