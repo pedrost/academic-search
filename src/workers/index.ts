@@ -4,6 +4,7 @@ import 'dotenv/config'
 import './linkedin-worker'
 import './sucupira-worker'
 import './bdtd-worker'
+import './ufms-worker'
 import { scraperQueue, enrichmentQueue } from '@/lib/queue'
 import { setWorkerStatus } from '@/lib/worker-control'
 import { logWorkerActivity } from '@/lib/worker-logger'
@@ -12,9 +13,11 @@ import { logWorkerActivity } from '@/lib/worker-logger'
 async function initializeWorkers() {
   await setWorkerStatus('sucupira', 'running')
   await setWorkerStatus('bdtd', 'running')
+  await setWorkerStatus('ufms', 'running')
   await setWorkerStatus('linkedin', 'running')
   await logWorkerActivity('sucupira', 'success', 'Worker initialized')
   await logWorkerActivity('bdtd', 'success', 'Worker initialized')
+  await logWorkerActivity('ufms', 'success', 'Worker initialized')
   await logWorkerActivity('linkedin', 'success', 'Worker initialized')
 }
 
@@ -44,6 +47,18 @@ async function scheduleJobs() {
     }
   )
 
+  // Schedule UFMS scraper to run monthly
+  await scraperQueue.add(
+    'ufms-scrape',
+    {},
+    {
+      repeat: {
+        pattern: '0 4 1 * *', // Run at 4 AM on the 1st of each month
+      },
+      jobId: 'ufms-monthly-scrape',
+    }
+  )
+
   // Schedule LinkedIn enrichment to run every 6 hours
   await enrichmentQueue.add(
     'linkedin-enrich',
@@ -59,6 +74,7 @@ async function scheduleJobs() {
   console.log('Worker scheduler: Jobs scheduled')
   console.log('- Sucupira scraper: Daily at 2 AM')
   console.log('- BDTD scraper: Weekly on Sundays at 3 AM')
+  console.log('- UFMS scraper: Monthly on the 1st at 4 AM')
   console.log('- LinkedIn enrichment: Every 6 hours')
 }
 
@@ -79,6 +95,7 @@ process.on('SIGTERM', async () => {
   console.log('Worker scheduler: Shutting down...')
   await setWorkerStatus('sucupira', 'stopped')
   await setWorkerStatus('bdtd', 'stopped')
+  await setWorkerStatus('ufms', 'stopped')
   await setWorkerStatus('linkedin', 'stopped')
   process.exit(0)
 })
@@ -87,6 +104,7 @@ process.on('SIGINT', async () => {
   console.log('Worker scheduler: Shutting down...')
   await setWorkerStatus('sucupira', 'stopped')
   await setWorkerStatus('bdtd', 'stopped')
+  await setWorkerStatus('ufms', 'stopped')
   await setWorkerStatus('linkedin', 'stopped')
   process.exit(0)
 })
