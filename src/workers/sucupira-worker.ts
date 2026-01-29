@@ -195,7 +195,7 @@ async function searchCAPESDataStore(institution: string, limit: number = 100): P
       const advisor = record.NM_ORIENTADOR || undefined
       const abstract = record.DS_RESUMO || undefined
 
-      const degreeLevel = degree.includes('doutorado') || degree.includes('phd') ? 'DOCTORATE' : 'MASTERS'
+      const degreeLevel = degree.includes('doutorado') || degree.includes('phd') ? 'PHD' : 'MASTERS'
 
       // Log each dissertation
       await log(`\n   [${i + 1}/${records.length}] ${name}`)
@@ -271,31 +271,58 @@ async function processSucupiraScrape() {
       await logWorkerActivity('sucupira', 'info', `    💾 Saving to database...`)
 
       for (const result of results) {
-        const existing = await prisma.academic.findFirst({
-          where: { name: result.name, institution: result.institution },
-        })
-
-        if (existing) {
-          await logWorkerActivity('sucupira', 'info', `    ⏭️  Skip (exists): ${result.name}`)
-          skipped++
-          continue
-        }
-
-        await prisma.academic.create({
-          data: {
+        // Check if academic already exists
+        let academic = await prisma.academic.findFirst({
+          where: {
             name: result.name,
             institution: result.institution,
-            degreeLevel: result.degreeLevel,
-            researchField: 'UNKNOWN',
-            graduationYear: result.year,
-            thesisTitle: result.title,
-            advisor: result.advisor,
+            graduationYear: result.year
+          },
+          include: { dissertations: true }
+        })
+
+        // Check if this specific dissertation already exists
+        if (academic) {
+          const dissertationExists = academic.dissertations.some(
+            d => d.title === result.title && d.defenseYear === result.year
+          )
+
+          if (dissertationExists) {
+            await logWorkerActivity('sucupira', 'info', `    ⏭️  Skip (exists): ${result.name} - ${result.title.substring(0, 50)}...`)
+            skipped++
+            continue
+          }
+        }
+
+        // Create academic if doesn't exist
+        if (!academic) {
+          academic = await prisma.academic.create({
+            data: {
+              name: result.name,
+              institution: result.institution,
+              degreeLevel: result.degreeLevel,
+              graduationYear: result.year,
+              researchField: 'UNKNOWN',
+              enrichmentStatus: 'PENDING',
+            },
+          })
+        }
+
+        // Create dissertation record
+        await prisma.dissertation.create({
+          data: {
+            academicId: academic.id,
+            title: result.title,
             abstract: result.abstract,
-            enrichmentStatus: 'NONE',
+            defenseYear: result.year,
+            institution: result.institution,
+            advisorName: result.advisor,
+            keywords: [],
           },
         })
 
         await logWorkerActivity('sucupira', 'success', `    ✅ Saved: ${result.name} (${result.year}) - ${result.degreeLevel}`)
+        await logWorkerActivity('sucupira', 'info', `       📖 ${result.title.substring(0, 60)}...`)
         created++
         totalCreated++
       }
