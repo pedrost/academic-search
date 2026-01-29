@@ -300,8 +300,13 @@ async function processBDTDScrape() {
 const bdtdWorker = new Worker(
   'scraper',
   async (job) => {
+    await logWorkerActivity('bdtd', 'info', `📥 Received job: ${job.name} (ID: ${job.id})`)
+
     if (job.name === 'bdtd-scrape') {
+      await logWorkerActivity('bdtd', 'success', '✅ Starting BDTD scrape job...')
       await processBDTDScrape()
+    } else {
+      await logWorkerActivity('bdtd', 'info', `⏭️  Ignoring job: ${job.name} (not for BDTD)`)
     }
   },
   { connection, concurrency: 1 }

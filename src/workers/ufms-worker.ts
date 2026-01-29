@@ -293,8 +293,13 @@ async function processUFMSScrape() {
 const ufmsWorker = new Worker(
   'scraper',
   async (job) => {
+    await logWorkerActivity('ufms', 'info', `📥 Received job: ${job.name} (ID: ${job.id})`)
+
     if (job.name === 'ufms-scrape') {
+      await logWorkerActivity('ufms', 'success', '✅ Starting UFMS scrape job...')
       await processUFMSScrape()
+    } else {
+      await logWorkerActivity('ufms', 'info', `⏭️  Ignoring job: ${job.name} (not for UFMS)`)
     }
   },
   { connection, concurrency: 1 }

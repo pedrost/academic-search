@@ -345,8 +345,13 @@ async function processSucupiraScrape() {
 const sucupiraWorker = new Worker(
   'scraper',
   async (job) => {
+    await logWorkerActivity('sucupira', 'info', `📥 Received job: ${job.name} (ID: ${job.id})`)
+
     if (job.name === 'sucupira-scrape') {
+      await logWorkerActivity('sucupira', 'success', '✅ Starting Sucupira scrape job...')
       await processSucupiraScrape()
+    } else {
+      await logWorkerActivity('sucupira', 'info', `⏭️  Ignoring job: ${job.name} (not for Sucupira)`)
     }
   },
   { connection, concurrency: 1 }
