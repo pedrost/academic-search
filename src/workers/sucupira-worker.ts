@@ -5,6 +5,7 @@ import { DegreeLevel } from '@prisma/client'
 import { logWorkerActivity } from '@/lib/worker-logger'
 import { shouldWorkerRun } from '@/lib/worker-control'
 import { chromium, Browser, BrowserContext } from 'playwright'
+import { upsertAcademicWithDissertation } from '@/lib/academic-upsert'
 
 // CAPES Open Data API (CKAN)
 const CAPES_API_BASE = 'https://dadosabertos.capes.gov.br/api/3/action'
@@ -268,63 +269,48 @@ async function processSucupiraScrape() {
       let created = 0
       let skipped = 0
 
-      await logWorkerActivity('sucupira', 'info', `    💾 Saving to database...`)
+      await logWorkerActivity('sucupira', 'info', `    💾 Saving to database (smart deduplication)...`)
 
       for (const result of results) {
-        // Check if academic already exists
-        let academic = await prisma.academic.findFirst({
-          where: {
-            name: result.name,
-            institution: result.institution,
-            graduationYear: result.year
-          },
-          include: { dissertations: true }
-        })
-
-        // Check if this specific dissertation already exists
-        if (academic) {
-          const dissertationExists = academic.dissertations.some(
-            d => d.title === result.title && d.defenseYear === result.year
-          )
-
-          if (dissertationExists) {
-            await logWorkerActivity('sucupira', 'info', `    ⏭️  Skip (exists): ${result.name} - ${result.title.substring(0, 50)}...`)
-            skipped++
-            continue
-          }
-        }
-
-        // Create academic if doesn't exist
-        if (!academic) {
-          academic = await prisma.academic.create({
-            data: {
+        try {
+          const upsertResult = await upsertAcademicWithDissertation(
+            {
               name: result.name,
               institution: result.institution,
-              degreeLevel: result.degreeLevel,
               graduationYear: result.year,
+              degreeLevel: result.degreeLevel,
               researchField: 'UNKNOWN',
-              enrichmentStatus: 'PENDING',
             },
-          })
+            {
+              title: result.title,
+              defenseYear: result.year,
+              institution: result.institution,
+              abstract: result.abstract,
+              advisorName: result.advisor,
+              keywords: [],
+            },
+            {
+              source: 'CAPES',
+              scrapedAt: new Date(),
+            }
+          )
+
+          if (upsertResult.dissertationCreated) {
+            await logWorkerActivity('sucupira', 'success', `    ✅ New: ${result.name} (${result.year}) - ${result.degreeLevel}`)
+            await logWorkerActivity('sucupira', 'info', `       📖 ${result.title.substring(0, 60)}...`)
+            created++
+            totalCreated++
+          } else if (upsertResult.academicUpdated) {
+            await logWorkerActivity('sucupira', 'info', `    🔄 Updated: ${result.name} - merged new data`)
+            skipped++
+          } else {
+            await logWorkerActivity('sucupira', 'info', `    ⏭️  Exists: ${result.name} - ${result.title.substring(0, 50)}...`)
+            skipped++
+          }
+
+        } catch (error: any) {
+          await logWorkerActivity('sucupira', 'error', `    ❌ Failed to save ${result.name}: ${error.message}`)
         }
-
-        // Create dissertation record
-        await prisma.dissertation.create({
-          data: {
-            academicId: academic.id,
-            title: result.title,
-            abstract: result.abstract,
-            defenseYear: result.year,
-            institution: result.institution,
-            advisorName: result.advisor,
-            keywords: [],
-          },
-        })
-
-        await logWorkerActivity('sucupira', 'success', `    ✅ Saved: ${result.name} (${result.year}) - ${result.degreeLevel}`)
-        await logWorkerActivity('sucupira', 'info', `       📖 ${result.title.substring(0, 60)}...`)
-        created++
-        totalCreated++
       }
 
       totalSkipped += skipped
