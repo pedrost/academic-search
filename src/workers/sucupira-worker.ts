@@ -1,256 +1,8 @@
 import { Worker } from 'bullmq'
 import { connection } from '@/lib/queue'
-import { prisma } from '@/lib/db'
-import { DegreeLevel } from '@prisma/client'
 import { logWorkerActivity } from '@/lib/worker-logger'
 import { shouldWorkerRun } from '@/lib/worker-control'
-import { chromium, Browser, BrowserContext } from 'playwright'
-import { upsertAcademicWithDissertation } from '@/lib/academic-upsert'
-
-// CAPES Open Data API (CKAN)
-const CAPES_API_BASE = 'https://dadosabertos.capes.gov.br/api/3/action'
-
-// Correct resource IDs for recent thesis/dissertation data (2021-2024)
-// These have datastore_active: true and can be queried
-const RESOURCE_IDS = {
-  '2024': '87133ba7-ac99-4d87-966e-8f580bc96231',
-  '2023': 'b69baf26-8d02-4c10-ba39-7e9ab799e6ed',
-  '2022': '78f73608-6f5e-463c-ba79-0bff4f8a578d',
-  '2021': '068003e4-196c-41f4-8c35-1f7c94b4e55c',
-}
-
-// Shared browser instance
-let browser: Browser | null = null
-let browserContext: BrowserContext | null = null
-
-async function getBrowserContext() {
-  if (!browser) {
-    try {
-      // Try Chrome first (preferred)
-      await logWorkerActivity('sucupira', 'info', '🌐 Launching Chrome browser (visible mode)...')
-      browser = await chromium.launch({
-        headless: false,
-        channel: 'chrome',
-      })
-      await logWorkerActivity('sucupira', 'success', '✅ Chrome browser launched')
-    } catch (chromeError) {
-      try {
-        // Fallback to Chromium
-        await logWorkerActivity('sucupira', 'info', '⚠️  Chrome not found, trying Chromium...')
-        browser = await chromium.launch({
-          headless: false,
-        })
-        await logWorkerActivity('sucupira', 'success', '✅ Chromium browser launched')
-      } catch (chromiumError) {
-        await logWorkerActivity('sucupira', 'error', '❌ BROWSER LAUNCH FAILED')
-        await logWorkerActivity('sucupira', 'error', '   Chrome not installed or not found')
-        await logWorkerActivity('sucupira', 'error', '   Chromium download failed')
-        await logWorkerActivity('sucupira', 'error', '   Please install Google Chrome or run: npx playwright install chromium')
-        throw new Error('No browser available. Install Chrome or run: npx playwright install chromium')
-      }
-    }
-  }
-  if (!browserContext) {
-    browserContext = await browser.newContext({
-      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-    })
-    // Set page title in browser window
-    const page = await browserContext.newPage()
-    await page.setViewportSize({ width: 1280, height: 720 })
-    await page.close()
-  }
-  return browserContext
-}
-
-// Target institutions in Mato Grosso do Sul
-const INSTITUTIONS_MS = [
-  'UNIVERSIDADE FEDERAL DE MATO GROSSO DO SUL',
-  'UNIVERSIDADE CATÓLICA DOM BOSCO',
-  'UNIVERSIDADE ESTADUAL DE MATO GROSSO DO SUL',
-  'INSTITUTO FEDERAL DE MATO GROSSO DO SUL',
-]
-
-interface SucupiraResult {
-  name: string
-  title: string
-  year: number
-  institution: string
-  degreeLevel: DegreeLevel
-  advisor?: string
-  abstract?: string
-  researchField?: string
-  sourceUrl?: string
-  keywords?: string[]
-}
-
-// Search CAPES DataStore for dissertations/theses using Playwright
-async function searchCAPESDataStore(institution: string, limit: number = 100): Promise<SucupiraResult[]> {
-  const fs = await import('fs/promises')
-  const logFile = 'sucupira-worker-detailed.txt'
-
-  const log = async (msg: string) => {
-    const timestamp = new Date().toISOString()
-    const logLine = `${timestamp} | ${msg}\n`
-    await fs.appendFile(logFile, logLine).catch(() => {})
-    console.log(msg)
-  }
-
-  await log('═══════════════════════════════════════════════════════════════')
-  await log('🌐 STARTING CAPES DATASTORE SEARCH (PLAYWRIGHT)')
-  await log(`🏛️  Institution: ${institution}`)
-  await log(`📊 Limit: ${limit} records`)
-  await logWorkerActivity('sucupira', 'info', `    🌐 Querying CAPES API...`)
-
-  try {
-    const searchUrl = `${CAPES_API_BASE}/datastore_search`
-    const resourceId = RESOURCE_IDS['2024']
-
-    // Build query filters
-    const filters = JSON.stringify({
-      'NM_ENTIDADE_ENSINO': institution
-    })
-
-    const fullUrl = `${searchUrl}?resource_id=${resourceId}&filters=${encodeURIComponent(filters)}&limit=${limit}`
-
-    await log(`\n📡 API REQUEST:`)
-    await log(`   Resource: 2024 data (${resourceId})`)
-    await log(`   Institution: ${institution}`)
-    await log(`   URL: ${fullUrl}`)
-
-    // Use Playwright to fetch data (works better than Node.js fetch)
-    const context = await getBrowserContext()
-    const page = await context.newPage()
-
-    // Set page title so you can see which institution is being processed
-    await page.evaluate((inst) => {
-      document.title = `CAPES Scraper - ${inst}`
-    }, institution).catch(() => {})
-
-    await log(`\n🔄 NAVIGATING WITH BROWSER (5 minute timeout)...`)
-    await logWorkerActivity('sucupira', 'info', `    🌐 Opening browser to ${institution}... (timeout: 5min)`)
-
-    const response = await page.goto(fullUrl, {
-      waitUntil: 'networkidle',
-      timeout: 300000, // 5 minutes - CAPES server is very slow
-    })
-
-    if (!response) {
-      await log(`❌ No response received`)
-      await logWorkerActivity('sucupira', 'error', `    ❌ No response`)
-      await page.close()
-      return []
-    }
-
-    const status = response.status()
-    await log(`✅ Response status: ${status}`)
-
-    if (status !== 200) {
-      const content = await page.content()
-      await log(`❌ HTTP ${status}`)
-      await log(`Response: ${content.substring(0, 500)}`)
-      await logWorkerActivity('sucupira', 'error', `    ❌ HTTP ${status}`)
-      await page.close()
-      return []
-    }
-
-    // Extract JSON from page
-    const content = await page.content()
-    const jsonMatch = content.match(/<pre>(.*?)<\/pre>/s)
-
-    if (!jsonMatch) {
-      await log(`❌ Could not extract JSON from response`)
-      await page.close()
-      return []
-    }
-
-    const data = JSON.parse(jsonMatch[1])
-    await page.close()
-
-    if (!data.success || !data.result?.records) {
-      await log(`\n⚠️  NO RECORDS FOUND`)
-      await log(`   success: ${data.success}`)
-      await log(`   error: ${data.error ? JSON.stringify(data.error) : 'none'}`)
-      await logWorkerActivity('sucupira', 'info', `    ℹ️  No records for ${institution}`)
-      return []
-    }
-
-    const records = data.result.records
-    await log(`\n✅ FOUND ${records.length} RECORDS`)
-
-    if (records.length > 0) {
-      await log(`\n📝 SAMPLE RECORD:`)
-      await log(`   Fields: ${JSON.stringify(Object.keys(records[0]))}`)
-    }
-
-    await logWorkerActivity('sucupira', 'info', `    ✅ Found ${records.length} records`)
-
-    // Transform API data to our format
-    const results: SucupiraResult[] = []
-
-    await log(`\n📚 PROCESSING RECORDS:`)
-    for (let i = 0; i < records.length; i++) {
-      const record = records[i]
-
-      // CAPES API field names (verified from actual API response):
-      // - NM_DISCENTE: student/author name
-      // - NM_PRODUCAO: dissertation title
-      // - AN_BASE: year
-      // - NM_ENTIDADE_ENSINO: institution
-      // - NM_GRAU_ACADEMICO: degree level (MESTRADO/DOUTORADO)
-      // - NM_ORIENTADOR: advisor name
-      // - DS_RESUMO: abstract (Portuguese)
-      // - NM_AREA_CONHECIMENTO: research field
-      // - DS_PALAVRA_CHAVE: keywords
-      // - DS_URL_TEXTO_COMPLETO: source URL
-      const name = record.NM_DISCENTE || 'Unknown'
-      const title = record.NM_PRODUCAO || 'No title'
-      const year = parseInt(record.AN_BASE || new Date().getFullYear(), 10)
-      const inst = record.NM_ENTIDADE_ENSINO || institution
-      const degree = (record.NM_GRAU_ACADEMICO || '').toLowerCase()
-      const advisor = record.NM_ORIENTADOR || undefined
-      const abstract = record.DS_RESUMO || undefined
-      const researchField = record.NM_AREA_CONHECIMENTO || undefined
-      const sourceUrl = record.DS_URL_TEXTO_COMPLETO || undefined
-      const keywordsRaw = record.DS_PALAVRA_CHAVE || ''
-      const keywords = keywordsRaw ? keywordsRaw.split(',').map((k: string) => k.trim()).filter(Boolean) : []
-
-      const degreeLevel = degree.includes('doutorado') || degree.includes('phd') ? 'PHD' : 'MASTERS'
-
-      // Log each dissertation
-      await log(`\n   [${i + 1}/${records.length}] ${name}`)
-      await log(`      📖 Title: ${title.substring(0, 80)}${title.length > 80 ? '...' : ''}`)
-      await log(`      📅 Year: ${year} | 🎓 Degree: ${degreeLevel}`)
-      await log(`      🔬 Field: ${researchField || 'N/A'}`)
-      if (advisor) {
-        await log(`      👨‍🏫 Advisor: ${advisor}`)
-      }
-
-      results.push({
-        name,
-        title,
-        year,
-        institution: inst,
-        degreeLevel,
-        advisor,
-        abstract,
-        researchField,
-        sourceUrl,
-        keywords,
-      })
-    }
-
-    await log(`\n✅ TRANSFORMED ${results.length} RESULTS`)
-    await log('═══════════════════════════════════════════════════════════════\n')
-    return results
-
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : 'Unknown error'
-    await log(`\n❌ ERROR: ${errorMsg}`)
-    await log('═══════════════════════════════════════════════════════════════\n')
-    await logWorkerActivity('sucupira', 'error', `    ❌ ${errorMsg}`)
-    return []
-  }
-}
+import { runSucupiraScrape } from '@/services/scrapers/sucupira-scraper'
 
 async function processSucupiraScrape() {
   const shouldRun = await shouldWorkerRun('sucupira')
@@ -259,110 +11,19 @@ async function processSucupiraScrape() {
     return
   }
 
-  await logWorkerActivity('sucupira', 'success', '🚀 Starting Sucupira data collection via CAPES Open Data API')
-  await logWorkerActivity('sucupira', 'info', `🏛️  Institutions: ${INSTITUTIONS_MS.length}`)
+  const result = await runSucupiraScrape({
+    onProgress: (msg) => logWorkerActivity('sucupira', 'info', msg)
+  })
 
-  let totalCreated = 0
-  let totalSkipped = 0
-
-  for (let i = 0; i < INSTITUTIONS_MS.length; i++) {
-    const institution = INSTITUTIONS_MS[i]
-
-    const shouldContinue = await shouldWorkerRun('sucupira')
-    if (!shouldContinue) {
-      await logWorkerActivity('sucupira', 'info', '⏸️  Paused')
-      break
-    }
-
-    await logWorkerActivity('sucupira', 'info', `\n[${i + 1}/${INSTITUTIONS_MS.length}] 🏛️  ${institution}`)
-
-    try {
-      const startTime = Date.now()
-      const results = await searchCAPESDataStore(institution, 100)
-      const duration = Date.now() - startTime
-
-      await logWorkerActivity('sucupira', 'info', `    ⏱️  Completed in ${duration}ms`)
-
-      if (results.length === 0) {
-        await logWorkerActivity('sucupira', 'info', `    ℹ️  No results`)
-        continue
-      }
-
-      let created = 0
-      let skipped = 0
-
-      await logWorkerActivity('sucupira', 'info', `    💾 Saving to database (smart deduplication)...`)
-
-      for (const result of results) {
-        try {
-          const upsertResult = await upsertAcademicWithDissertation(
-            {
-              name: result.name,
-              institution: result.institution,
-              graduationYear: result.year,
-              degreeLevel: result.degreeLevel,
-              researchField: result.researchField || 'UNKNOWN',
-            },
-            {
-              title: result.title,
-              defenseYear: result.year,
-              institution: result.institution,
-              abstract: result.abstract,
-              advisorName: result.advisor,
-              keywords: result.keywords || [],
-              sourceUrl: result.sourceUrl,
-            },
-            {
-              source: 'CAPES',
-              scrapedAt: new Date(),
-            }
-          )
-
-          if (upsertResult.dissertationCreated) {
-            await logWorkerActivity('sucupira', 'success', `    ✅ New: ${result.name} (${result.year}) - ${result.degreeLevel}`)
-            await logWorkerActivity('sucupira', 'info', `       📖 ${result.title.substring(0, 60)}...`)
-            created++
-            totalCreated++
-          } else if (upsertResult.academicUpdated) {
-            await logWorkerActivity('sucupira', 'info', `    🔄 Updated: ${result.name} - merged new data`)
-            skipped++
-          } else {
-            await logWorkerActivity('sucupira', 'info', `    ⏭️  Exists: ${result.name} - ${result.title.substring(0, 50)}...`)
-            skipped++
-          }
-
-        } catch (error: any) {
-          await logWorkerActivity('sucupira', 'error', `    ❌ Failed to save ${result.name}: ${error.message}`)
-        }
-      }
-
-      totalSkipped += skipped
-      await logWorkerActivity('sucupira', 'success', `    📈 Batch complete: ${created} new, ${skipped} duplicates`)
-
-      if (i < INSTITUTIONS_MS.length - 1) {
-        await new Promise((resolve) => setTimeout(resolve, 2000))
-      }
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : 'Unknown'
-      await logWorkerActivity('sucupira', 'error', `    ❌ ${errorMsg}`)
-    }
+  if (result.success) {
+    await logWorkerActivity('sucupira', 'success',
+      `Complete: ${result.totalCreated} new, ${result.totalSkipped} skipped`
+    )
+  } else {
+    await logWorkerActivity('sucupira', 'error',
+      `Completed with errors: ${result.totalErrors} errors`
+    )
   }
-
-  await logWorkerActivity('sucupira', 'success', `\n🎉 Scraping complete!`)
-  await logWorkerActivity('sucupira', 'success', `   📊 Total new academics: ${totalCreated}`)
-  await logWorkerActivity('sucupira', 'success', `   ⏭️  Total duplicates: ${totalSkipped}`)
-  await logWorkerActivity('sucupira', 'success', `   🏛️  Institutions processed: ${INSTITUTIONS_MS.length}`)
-
-  // Close browser after completion
-  if (browserContext) {
-    await browserContext.close()
-    browserContext = null
-  }
-  if (browser) {
-    await browser.close()
-    browser = null
-  }
-  await logWorkerActivity('sucupira', 'info', '✅ Browser closed')
 }
 
 const sucupiraWorker = new Worker(
@@ -380,15 +41,6 @@ const sucupiraWorker = new Worker(
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error'
       await logWorkerActivity('sucupira', 'error', `❌ Job failed: ${errorMsg}`)
-      // Close browser on error to prevent resource leaks
-      if (browserContext) {
-        await browserContext.close().catch(() => {})
-        browserContext = null
-      }
-      if (browser) {
-        await browser.close().catch(() => {})
-        browser = null
-      }
       throw error // Re-throw so BullMQ marks job as failed
     }
   },
@@ -405,8 +57,6 @@ sucupiraWorker.on('failed', async (job, err) => {
 
 // Cleanup on shutdown
 process.on('SIGTERM', async () => {
-  if (browserContext) await browserContext.close()
-  if (browser) await browser.close()
   await sucupiraWorker.close()
 })
 
