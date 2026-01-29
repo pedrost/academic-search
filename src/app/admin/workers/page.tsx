@@ -52,6 +52,15 @@ async function clearLogs() {
   return res.json()
 }
 
+async function runWorkerDirect(worker: string) {
+  const res = await fetch('/api/admin/workers/run', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ worker }),
+  })
+  return res.json()
+}
+
 export default function WorkersPage() {
   const queryClient = useQueryClient()
   const [autoRefresh, setAutoRefresh] = useState(true)
@@ -85,6 +94,13 @@ export default function WorkersPage() {
 
   const clearLogsMutation = useMutation({
     mutationFn: clearLogs,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['worker-logs'] })
+    },
+  })
+
+  const runDirectMutation = useMutation({
+    mutationFn: (worker: string) => runWorkerDirect(worker),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['worker-logs'] })
     },
@@ -179,7 +195,7 @@ export default function WorkersPage() {
                 Stop
               </Button>
             </div>
-            <div className="pt-2 border-t">
+            <div className="pt-2 border-t space-y-2">
               <Button
                 size="sm"
                 variant="secondary"
@@ -188,6 +204,15 @@ export default function WorkersPage() {
                 disabled={triggerMutation.isPending}
               >
                 Executar Agora (Manual)
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-full"
+                onClick={() => runDirectMutation.mutate('sucupira')}
+                disabled={runDirectMutation.isPending}
+              >
+                ▶️ Run Direct
               </Button>
             </div>
           </CardContent>
@@ -233,7 +258,7 @@ export default function WorkersPage() {
                 Stop
               </Button>
             </div>
-            <div className="pt-2 border-t">
+            <div className="pt-2 border-t space-y-2">
               <Button
                 size="sm"
                 variant="secondary"
@@ -242,6 +267,15 @@ export default function WorkersPage() {
                 disabled={triggerMutation.isPending}
               >
                 Executar Agora (Manual)
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-full"
+                onClick={() => runDirectMutation.mutate('bdtd')}
+                disabled={runDirectMutation.isPending}
+              >
+                ▶️ Run Direct
               </Button>
             </div>
           </CardContent>
@@ -287,7 +321,7 @@ export default function WorkersPage() {
                 Stop
               </Button>
             </div>
-            <div className="pt-2 border-t">
+            <div className="pt-2 border-t space-y-2">
               <Button
                 size="sm"
                 variant="secondary"
@@ -296,6 +330,15 @@ export default function WorkersPage() {
                 disabled={triggerMutation.isPending}
               >
                 Executar Agora (Manual)
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-full"
+                onClick={() => runDirectMutation.mutate('ufms')}
+                disabled={runDirectMutation.isPending}
+              >
+                ▶️ Run Direct
               </Button>
             </div>
           </CardContent>
@@ -341,7 +384,7 @@ export default function WorkersPage() {
                 Stop
               </Button>
             </div>
-            <div className="pt-2 border-t">
+            <div className="pt-2 border-t space-y-2">
               <Button
                 size="sm"
                 variant="secondary"
@@ -350,6 +393,15 @@ export default function WorkersPage() {
                 disabled={triggerMutation.isPending}
               >
                 Executar Agora (Manual)
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-full"
+                onClick={() => runDirectMutation.mutate('linkedin')}
+                disabled={runDirectMutation.isPending}
+              >
+                ▶️ Run Direct
               </Button>
             </div>
           </CardContent>
