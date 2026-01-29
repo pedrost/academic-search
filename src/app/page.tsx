@@ -30,9 +30,7 @@ async function fetchAcademics(
 }
 
 export default function HomePage() {
-  const [filters, setFilters] = useState<SearchFiltersType>({
-    currentState: 'MS',
-  })
+  const [filters, setFilters] = useState<SearchFiltersType>({})
   const [page, setPage] = useState(1)
   const [searchTrigger, setSearchTrigger] = useState(0)
 

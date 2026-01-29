@@ -75,7 +75,7 @@ async function scrapeUFMSRepository(page: Page, maxPages: number = 5): Promise<U
     await log(`\n📡 Navigating to: ${UFMS_COLLECTION}`)
     await page.goto(UFMS_COLLECTION, {
       waitUntil: 'networkidle',
-      timeout: 180000,
+      timeout: 300000, // 5 minutes
     })
     await log(`✅ Page loaded`)
 
@@ -293,13 +293,28 @@ async function processUFMSScrape() {
 const ufmsWorker = new Worker(
   'scraper',
   async (job) => {
-    await logWorkerActivity('ufms', 'info', `📥 Received job: ${job.name} (ID: ${job.id})`)
+    try {
+      await logWorkerActivity('ufms', 'info', `📥 Received job: ${job.name} (ID: ${job.id})`)
 
-    if (job.name === 'ufms-scrape') {
-      await logWorkerActivity('ufms', 'success', '✅ Starting UFMS scrape job...')
-      await processUFMSScrape()
-    } else {
-      await logWorkerActivity('ufms', 'info', `⏭️  Ignoring job: ${job.name} (not for UFMS)`)
+      if (job.name === 'ufms-scrape') {
+        await logWorkerActivity('ufms', 'success', '✅ Starting UFMS scrape job...')
+        await processUFMSScrape()
+      } else {
+        await logWorkerActivity('ufms', 'info', `⏭️  Ignoring job: ${job.name} (not for UFMS)`)
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error'
+      await logWorkerActivity('ufms', 'error', `❌ Job failed: ${errorMsg}`)
+      // Close browser on error to prevent resource leaks
+      if (browserContext) {
+        await browserContext.close().catch(() => {})
+        browserContext = null
+      }
+      if (browser) {
+        await browser.close().catch(() => {})
+        browser = null
+      }
+      throw error // Re-throw so BullMQ marks job as failed
     }
   },
   { connection, concurrency: 1 }

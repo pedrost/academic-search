@@ -87,7 +87,7 @@ async function searchBDTD(institution: string, page: Page): Promise<BDTDResult[]
 
     await page.goto(searchUrl, {
       waitUntil: 'networkidle',
-      timeout: 180000, // 3 minutes
+      timeout: 300000, // 5 minutes
     })
 
     await log(`✅ Page loaded`)
@@ -300,13 +300,28 @@ async function processBDTDScrape() {
 const bdtdWorker = new Worker(
   'scraper',
   async (job) => {
-    await logWorkerActivity('bdtd', 'info', `📥 Received job: ${job.name} (ID: ${job.id})`)
+    try {
+      await logWorkerActivity('bdtd', 'info', `📥 Received job: ${job.name} (ID: ${job.id})`)
 
-    if (job.name === 'bdtd-scrape') {
-      await logWorkerActivity('bdtd', 'success', '✅ Starting BDTD scrape job...')
-      await processBDTDScrape()
-    } else {
-      await logWorkerActivity('bdtd', 'info', `⏭️  Ignoring job: ${job.name} (not for BDTD)`)
+      if (job.name === 'bdtd-scrape') {
+        await logWorkerActivity('bdtd', 'success', '✅ Starting BDTD scrape job...')
+        await processBDTDScrape()
+      } else {
+        await logWorkerActivity('bdtd', 'info', `⏭️  Ignoring job: ${job.name} (not for BDTD)`)
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error'
+      await logWorkerActivity('bdtd', 'error', `❌ Job failed: ${errorMsg}`)
+      // Close browser on error to prevent resource leaks
+      if (browserContext) {
+        await browserContext.close().catch(() => {})
+        browserContext = null
+      }
+      if (browser) {
+        await browser.close().catch(() => {})
+        browser = null
+      }
+      throw error // Re-throw so BullMQ marks job as failed
     }
   },
   { connection, concurrency: 1 }

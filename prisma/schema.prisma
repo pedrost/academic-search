@@ -77,6 +77,8 @@ model Academic {
   dissertations    Dissertation[]
   enrichmentTasks  EnrichmentTask[]
 
+  @@index([name, institution, graduationYear])
+  @@index([enrichmentStatus, linkedinUrl])
   @@map("academics")
 }
 
@@ -96,6 +98,8 @@ model Dissertation {
 
   academic     Academic @relation(fields: [academicId], references: [id], onDelete: Cascade)
 
+  @@index([academicId])
+  @@index([academicId, title, defenseYear])
   @@map("dissertations")
 }
 

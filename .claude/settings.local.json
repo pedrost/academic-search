@@ -4,7 +4,21 @@
       "Bash(git init:*)",
       "Bash(git add:*)",
       "Bash(git commit -m \"$\\(cat <<''EOF''\nAdd Academic Hunter system design document\n\nInitial design for a POC system to discover and track Brazilian academics\nin Mato Grosso do Sul. Covers architecture, data model, scraper strategy,\nand UI design for both end-users and operators.\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
-      "Bash(git commit -m \"$\\(cat <<''EOF''\ndocs: add detailed implementation plan with 13 tasks\n\nComprehensive step-by-step plan covering:\n- Project scaffolding \\(Next.js, Docker, Prisma\\)\n- Database schema and migrations\n- Search API and UI components\n- Admin dashboard with task queue\n- Sucupira scraper with Playwright stealth\n- LinkedIn enrichment flow\n- CAPTCHA resolution system\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")"
+      "Bash(git commit -m \"$\\(cat <<''EOF''\ndocs: add detailed implementation plan with 13 tasks\n\nComprehensive step-by-step plan covering:\n- Project scaffolding \\(Next.js, Docker, Prisma\\)\n- Database schema and migrations\n- Search API and UI components\n- Admin dashboard with task queue\n- Sucupira scraper with Playwright stealth\n- LinkedIn enrichment flow\n- CAPTCHA resolution system\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(find:*)",
+      "Bash(wc:*)",
+      "Bash(xargs:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npx prisma:*)",
+      "Bash(ls:*)",
+      "Bash(docker ps:*)",
+      "Bash(docker compose:*)",
+      "Bash(timeout 5 npx tsx:*)",
+      "Bash(curl:*)",
+      "Bash(npx tsx:*)",
+      "WebSearch",
+      "WebFetch(domain:docs.x.ai)",
+      "Bash(git commit:*)"
     ]
   }
 }

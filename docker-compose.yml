@@ -7,7 +7,7 @@ services:
       POSTGRES_PASSWORD: hunter_dev
       POSTGRES_DB: hunter
     ports:
-      - "5432:5432"
+      - "5499:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
@@ -15,7 +15,7 @@ services:
     image: redis:7-alpine
     container_name: hunter-redis
     ports:
-      - "6379:6379"
+      - "6380:6379"
     volumes:
       - redis_data:/data
 

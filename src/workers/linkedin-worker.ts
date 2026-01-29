@@ -30,7 +30,7 @@ async function processLinkedInEnrichment() {
   const totalPending = await prisma.academic.count({
     where: {
       OR: [
-        { enrichmentStatus: 'NONE' },
+        { enrichmentStatus: 'PENDING' },
         { enrichmentStatus: 'PARTIAL' },
       ],
       linkedinUrl: null,
@@ -43,7 +43,7 @@ async function processLinkedInEnrichment() {
   const academics = await prisma.academic.findMany({
     where: {
       OR: [
-        { enrichmentStatus: 'NONE' },
+        { enrichmentStatus: 'PENDING' },
         { enrichmentStatus: 'PARTIAL' },
       ],
       linkedinUrl: null,
@@ -92,7 +92,7 @@ async function processLinkedInEnrichment() {
         await logWorkerActivity('linkedin', 'info', `    ⚠️  No LinkedIn profiles found for ${academic.name}`)
         await prisma.academic.update({
           where: { id: academic.id },
-          data: { enrichmentStatus: 'NONE' },
+          data: { enrichmentStatus: 'PENDING' },
         })
         failCount++
         continue
@@ -145,7 +145,7 @@ async function processLinkedInEnrichment() {
       // Mark as failed but continue with next academic
       await prisma.academic.update({
         where: { id: academic.id },
-        data: { enrichmentStatus: 'NONE' },
+        data: { enrichmentStatus: 'PENDING' },
       })
       failCount++
     }
@@ -158,8 +158,14 @@ async function processLinkedInEnrichment() {
 const linkedInWorker = new Worker(
   'enrichment',
   async (job) => {
-    if (job.name === 'linkedin-enrich') {
-      await processLinkedInEnrichment()
+    try {
+      if (job.name === 'linkedin-enrich') {
+        await processLinkedInEnrichment()
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error'
+      await logWorkerActivity('linkedin', 'error', `❌ Job failed: ${errorMsg}`)
+      throw error // Re-throw so BullMQ marks job as failed
     }
   },
   {

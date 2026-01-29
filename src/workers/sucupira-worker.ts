@@ -78,6 +78,9 @@ interface SucupiraResult {
   degreeLevel: DegreeLevel
   advisor?: string
   abstract?: string
+  researchField?: string
+  sourceUrl?: string
+  keywords?: string[]
 }
 
 // Search CAPES DataStore for dissertations/theses using Playwright
@@ -123,12 +126,12 @@ async function searchCAPESDataStore(institution: string, limit: number = 100): P
       document.title = `CAPES Scraper - ${inst}`
     }, institution).catch(() => {})
 
-    await log(`\n🔄 NAVIGATING WITH BROWSER (3 minute timeout)...`)
-    await logWorkerActivity('sucupira', 'info', `    🌐 Opening browser to ${institution}... (timeout: 3min)`)
+    await log(`\n🔄 NAVIGATING WITH BROWSER (5 minute timeout)...`)
+    await logWorkerActivity('sucupira', 'info', `    🌐 Opening browser to ${institution}... (timeout: 5min)`)
 
     const response = await page.goto(fullUrl, {
       waitUntil: 'networkidle',
-      timeout: 180000, // 3 minutes - CAPES server is very slow
+      timeout: 300000, // 5 minutes - CAPES server is very slow
     })
 
     if (!response) {
@@ -188,13 +191,28 @@ async function searchCAPESDataStore(institution: string, limit: number = 100): P
     for (let i = 0; i < records.length; i++) {
       const record = records[i]
 
-      const name = record.NM_AUTOR || record.NM_DISCENTE || 'Unknown'
-      const title = record.NM_PRODUCAO || record.NM_TRABALHO || 'No title'
+      // CAPES API field names (verified from actual API response):
+      // - NM_DISCENTE: student/author name
+      // - NM_PRODUCAO: dissertation title
+      // - AN_BASE: year
+      // - NM_ENTIDADE_ENSINO: institution
+      // - NM_GRAU_ACADEMICO: degree level (MESTRADO/DOUTORADO)
+      // - NM_ORIENTADOR: advisor name
+      // - DS_RESUMO: abstract (Portuguese)
+      // - NM_AREA_CONHECIMENTO: research field
+      // - DS_PALAVRA_CHAVE: keywords
+      // - DS_URL_TEXTO_COMPLETO: source URL
+      const name = record.NM_DISCENTE || 'Unknown'
+      const title = record.NM_PRODUCAO || 'No title'
       const year = parseInt(record.AN_BASE || new Date().getFullYear(), 10)
       const inst = record.NM_ENTIDADE_ENSINO || institution
       const degree = (record.NM_GRAU_ACADEMICO || '').toLowerCase()
       const advisor = record.NM_ORIENTADOR || undefined
       const abstract = record.DS_RESUMO || undefined
+      const researchField = record.NM_AREA_CONHECIMENTO || undefined
+      const sourceUrl = record.DS_URL_TEXTO_COMPLETO || undefined
+      const keywordsRaw = record.DS_PALAVRA_CHAVE || ''
+      const keywords = keywordsRaw ? keywordsRaw.split(',').map((k: string) => k.trim()).filter(Boolean) : []
 
       const degreeLevel = degree.includes('doutorado') || degree.includes('phd') ? 'PHD' : 'MASTERS'
 
@@ -202,6 +220,7 @@ async function searchCAPESDataStore(institution: string, limit: number = 100): P
       await log(`\n   [${i + 1}/${records.length}] ${name}`)
       await log(`      📖 Title: ${title.substring(0, 80)}${title.length > 80 ? '...' : ''}`)
       await log(`      📅 Year: ${year} | 🎓 Degree: ${degreeLevel}`)
+      await log(`      🔬 Field: ${researchField || 'N/A'}`)
       if (advisor) {
         await log(`      👨‍🏫 Advisor: ${advisor}`)
       }
@@ -214,6 +233,9 @@ async function searchCAPESDataStore(institution: string, limit: number = 100): P
         degreeLevel,
         advisor,
         abstract,
+        researchField,
+        sourceUrl,
+        keywords,
       })
     }
 
@@ -279,7 +301,7 @@ async function processSucupiraScrape() {
               institution: result.institution,
               graduationYear: result.year,
               degreeLevel: result.degreeLevel,
-              researchField: 'UNKNOWN',
+              researchField: result.researchField || 'UNKNOWN',
             },
             {
               title: result.title,
@@ -287,7 +309,8 @@ async function processSucupiraScrape() {
               institution: result.institution,
               abstract: result.abstract,
               advisorName: result.advisor,
-              keywords: [],
+              keywords: result.keywords || [],
+              sourceUrl: result.sourceUrl,
             },
             {
               source: 'CAPES',
@@ -345,13 +368,28 @@ async function processSucupiraScrape() {
 const sucupiraWorker = new Worker(
   'scraper',
   async (job) => {
-    await logWorkerActivity('sucupira', 'info', `📥 Received job: ${job.name} (ID: ${job.id})`)
+    try {
+      await logWorkerActivity('sucupira', 'info', `📥 Received job: ${job.name} (ID: ${job.id})`)
 
-    if (job.name === 'sucupira-scrape') {
-      await logWorkerActivity('sucupira', 'success', '✅ Starting Sucupira scrape job...')
-      await processSucupiraScrape()
-    } else {
-      await logWorkerActivity('sucupira', 'info', `⏭️  Ignoring job: ${job.name} (not for Sucupira)`)
+      if (job.name === 'sucupira-scrape') {
+        await logWorkerActivity('sucupira', 'success', '✅ Starting Sucupira scrape job...')
+        await processSucupiraScrape()
+      } else {
+        await logWorkerActivity('sucupira', 'info', `⏭️  Ignoring job: ${job.name} (not for Sucupira)`)
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error'
+      await logWorkerActivity('sucupira', 'error', `❌ Job failed: ${errorMsg}`)
+      // Close browser on error to prevent resource leaks
+      if (browserContext) {
+        await browserContext.close().catch(() => {})
+        browserContext = null
+      }
+      if (browser) {
+        await browser.close().catch(() => {})
+        browser = null
+      }
+      throw error // Re-throw so BullMQ marks job as failed
     }
   },
   { connection, concurrency: 1 }
