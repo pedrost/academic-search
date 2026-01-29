@@ -122,12 +122,12 @@ async function searchCAPESDataStore(institution: string, limit: number = 100): P
       document.title = `CAPES Scraper - ${inst}`
     }, institution).catch(() => {})
 
-    await log(`\n🔄 NAVIGATING WITH BROWSER...`)
-    await logWorkerActivity('sucupira', 'info', `    🌐 Opening browser to ${institution}...`)
+    await log(`\n🔄 NAVIGATING WITH BROWSER (3 minute timeout)...`)
+    await logWorkerActivity('sucupira', 'info', `    🌐 Opening browser to ${institution}... (timeout: 3min)`)
 
     const response = await page.goto(fullUrl, {
       waitUntil: 'networkidle',
-      timeout: 60000,
+      timeout: 180000, // 3 minutes - CAPES server is very slow
     })
 
     if (!response) {
