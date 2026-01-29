@@ -1,13 +1,10 @@
 import { Worker } from 'bullmq'
 import { connection } from '@/lib/queue'
-import { searchLinkedIn, extractProfileDetails, enrichAcademicFromLinkedIn } from '@/lib/scrapers/linkedin'
-import { prisma } from '@/lib/db'
-import { hasSavedCookies } from '@/lib/scrapers/linkedin-auth'
+import { runLinkedinEnrichment } from '@/services/scrapers/linkedin-scraper'
 import { logWorkerActivity } from '@/lib/worker-logger'
 import { shouldWorkerRun } from '@/lib/worker-control'
 
 const BATCH_SIZE = 10
-const DELAY_BETWEEN_PROFILES = 5000 // 5 seconds between each profile enrichment
 
 async function processLinkedInEnrichment() {
   // Check if worker should run
@@ -17,141 +14,38 @@ async function processLinkedInEnrichment() {
     return
   }
 
-  // Check if we have authentication
-  const hasAuth = await hasSavedCookies()
-  if (!hasAuth) {
-    await logWorkerActivity('linkedin', 'error', '❌ No saved cookies found. Please authenticate via admin panel.')
-    return
-  }
-
   await logWorkerActivity('linkedin', 'info', '🚀 Starting LinkedIn enrichment batch...')
 
-  // Get total count first
-  const totalPending = await prisma.academic.count({
-    where: {
-      OR: [
-        { enrichmentStatus: 'PENDING' },
-        { enrichmentStatus: 'PARTIAL' },
-      ],
-      linkedinUrl: null,
-    },
+  // Run the LinkedIn enrichment service
+  const result = await runLinkedinEnrichment({
+    limit: BATCH_SIZE,
+    onProgress: async (message: string) => {
+      // Determine log level from message prefix
+      const level = message.startsWith('❌') || message.includes('Error')
+        ? 'error'
+        : message.startsWith('✅') || message.includes('Successfully')
+        ? 'success'
+        : 'info'
+
+      await logWorkerActivity('linkedin', level, message)
+    }
   })
 
-  await logWorkerActivity('linkedin', 'info', `📊 Found ${totalPending} total academics needing enrichment`)
-
-  // Get academics that need enrichment (no LinkedIn data yet)
-  const academics = await prisma.academic.findMany({
-    where: {
-      OR: [
-        { enrichmentStatus: 'PENDING' },
-        { enrichmentStatus: 'PARTIAL' },
-      ],
-      linkedinUrl: null,
-    },
-    take: BATCH_SIZE,
-    orderBy: { createdAt: 'asc' },
-  })
-
-  if (academics.length === 0) {
-    await logWorkerActivity('linkedin', 'info', '✅ No academics to enrich in this batch')
-    return
-  }
-
-  await logWorkerActivity('linkedin', 'info', `🎯 Processing ${academics.length} academics in this batch`)
-
-  let successCount = 0
-  let failCount = 0
-  let currentIndex = 0
-
-  for (const academic of academics) {
-    currentIndex++
-
-    // Check if worker should continue running
-    const shouldContinue = await shouldWorkerRun('linkedin')
-    if (!shouldContinue) {
-      await logWorkerActivity('linkedin', 'info', '⏸️  Worker paused during batch, stopping')
-      break
-    }
-
-    await logWorkerActivity('linkedin', 'info', `\n[${currentIndex}/${academics.length}] 👤 Processing: ${academic.name}`)
-    await logWorkerActivity('linkedin', 'info', `    🏛️  Institution: ${academic.institution || 'N/A'}`)
-    await logWorkerActivity('linkedin', 'info', `    🎓 Degree: ${academic.degreeLevel} (${academic.graduationYear || 'unknown year'})`)
-
-    try {
-      // Search for the academic on LinkedIn
-      const searchQuery = `${academic.name} ${academic.institution || ''}`
-      await logWorkerActivity('linkedin', 'info', `    🔍 Searching LinkedIn for: "${searchQuery}"`)
-
-      const startTime = Date.now()
-      const profiles = await searchLinkedIn(searchQuery)
-      const searchDuration = Date.now() - startTime
-
-      await logWorkerActivity('linkedin', 'info', `    ⏱️  Search completed in ${searchDuration}ms`)
-
-      if (profiles.length === 0) {
-        await logWorkerActivity('linkedin', 'info', `    ⚠️  No LinkedIn profiles found for ${academic.name}`)
-        await prisma.academic.update({
-          where: { id: academic.id },
-          data: { enrichmentStatus: 'PENDING' },
-        })
-        failCount++
-        continue
-      }
-
-      await logWorkerActivity('linkedin', 'info', `    ✨ Found ${profiles.length} potential matches on LinkedIn`)
-
-      // Take the first match (in production, we'd want better matching logic)
-      const profile = profiles[0]
-      await logWorkerActivity('linkedin', 'info', `    🎯 Best match: ${profile.name}`)
-      await logWorkerActivity('linkedin', 'info', `    📍 Location: ${profile.location || 'N/A'}`)
-      await logWorkerActivity('linkedin', 'info', `    💼 Headline: ${profile.headline || 'N/A'}`)
-      await logWorkerActivity('linkedin', 'info', `    🔗 Profile URL: ${profile.profileUrl}`)
-
-      // Extract detailed profile information
-      await logWorkerActivity('linkedin', 'info', `    📥 Extracting detailed profile information...`)
-      const detailsStartTime = Date.now()
-      const details = await extractProfileDetails(profile.profileUrl)
-      const detailsDuration = Date.now() - detailsStartTime
-
-      await logWorkerActivity('linkedin', 'info', `    ⏱️  Details extracted in ${detailsDuration}ms`)
-
-      if (details.currentTitle || details.currentCompany) {
-        await logWorkerActivity('linkedin', 'info', `    💼 Current Position: ${details.currentTitle || 'N/A'} at ${details.currentCompany || 'N/A'}`)
-      } else {
-        await logWorkerActivity('linkedin', 'info', `    ⚠️  No current employment information found`)
-      }
-
-      // Enrich the academic record
-      await logWorkerActivity('linkedin', 'info', `    💾 Saving to database...`)
-      await enrichAcademicFromLinkedIn(academic.id, {
-        ...profile,
-        ...details,
+  // Log final result
+  if (result.success) {
+    await logWorkerActivity('linkedin', 'success',
+      `Batch complete! Enriched: ${result.totalCreated} | Skipped: ${result.totalSkipped} | Duration: ${(result.duration / 1000).toFixed(1)}s`
+    )
+  } else {
+    await logWorkerActivity('linkedin', 'error',
+      `Batch failed! Errors: ${result.totalErrors} | Duration: ${(result.duration / 1000).toFixed(1)}s`
+    )
+    if (result.errorMessages) {
+      result.errorMessages.forEach(async (msg) => {
+        await logWorkerActivity('linkedin', 'error', `  - ${msg}`)
       })
-
-      await logWorkerActivity('linkedin', 'success', `    ✅ Successfully enriched ${academic.name}!`)
-      successCount++
-
-      // Delay between profiles to avoid rate limiting
-      await logWorkerActivity('linkedin', 'info', `    ⏳ Waiting ${DELAY_BETWEEN_PROFILES/1000}s before next profile...`)
-      await new Promise((resolve) => setTimeout(resolve, DELAY_BETWEEN_PROFILES))
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : 'Unknown error'
-      const errorStack = error instanceof Error ? error.stack : ''
-      await logWorkerActivity('linkedin', 'error', `    ❌ Error enriching ${academic.name}: ${errorMsg}`)
-      if (errorStack) {
-        await logWorkerActivity('linkedin', 'error', `    📚 Stack trace: ${errorStack.split('\n')[0]}`)
-      }
-
-      // Mark as failed but continue with next academic
-      await prisma.academic.update({
-        where: { id: academic.id },
-        data: { enrichmentStatus: 'PENDING' },
-      })
-      failCount++
     }
   }
-
-  await logWorkerActivity('linkedin', 'success', `\n🎉 Batch complete! Success: ${successCount} | Failed: ${failCount} | Remaining: ${totalPending - successCount - failCount}`)
 }
 
 // Create the worker
