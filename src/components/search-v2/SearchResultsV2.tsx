@@ -1,19 +1,19 @@
 'use client'
 
 import { Button, ButtonGroup, Pagination, Chip } from '@nextui-org/react'
-import { Grid3X3, List, SortAsc } from 'lucide-react'
+import { Grid3X3, List, SortAsc, Globe } from 'lucide-react'
 import { useState } from 'react'
 import { AcademicCardV2 } from './AcademicCardV2'
 import { SkeletonCard } from './SkeletonCard'
-import { SearchResult } from '@/types'
+import { SearchResult, SearchFilters } from '@/types'
 
 type Props = {
   result?: SearchResult
   isLoading: boolean
   page: number
   onPageChange: (page: number) => void
-  onEnrich?: (id: string) => void
-  enrichingIds?: string[]
+  filters?: SearchFilters
+  onWebSearchComplete?: (academicId: string) => void
 }
 
 type ViewMode = 'grid' | 'list'
@@ -23,10 +23,36 @@ export function SearchResultsV2({
   isLoading,
   page,
   onPageChange,
-  onEnrich,
-  enrichingIds = [],
+  filters,
+  onWebSearchComplete,
 }: Props) {
   const [viewMode, setViewMode] = useState<ViewMode>('grid')
+  const [isSearchingWeb, setIsSearchingWeb] = useState(false)
+  const [webSearchError, setWebSearchError] = useState<string | null>(null)
+
+  const handleWebSearch = async () => {
+    if (!filters?.query) return
+
+    setIsSearchingWeb(true)
+    setWebSearchError(null)
+
+    try {
+      const res = await fetch(`/api/discover-academic?name=${encodeURIComponent(filters.query)}`)
+      const data = await res.json()
+
+      if (data.success && data.found && data.academic) {
+        onWebSearchComplete?.(data.academic.id)
+      } else {
+        setWebSearchError(data.reason || 'Nenhum acadêmico encontrado na web')
+      }
+    } catch (error) {
+      setWebSearchError('Erro ao buscar na web. Tente novamente.')
+    } finally {
+      setIsSearchingWeb(false)
+    }
+  }
+
+  const hasSearchQuery = filters?.query && filters.query.trim().length > 0
 
   const totalPages = result ? Math.ceil(result.total / result.pageSize) : 0
   const showingStart = result ? (page - 1) * result.pageSize + 1 : 0
@@ -90,9 +116,36 @@ export function SearchResultsV2({
           <h3 className="text-xl font-semibold text-default-700 mb-2">
             Nenhum acadêmico encontrado
           </h3>
-          <p className="text-default-500 max-w-md mx-auto">
-            Tente remover alguns filtros ou buscar por termos diferentes.
+          <p className="text-default-500 max-w-md mx-auto mb-6">
+            {hasSearchQuery
+              ? 'Não encontramos este acadêmico no banco de dados.'
+              : 'Tente remover alguns filtros ou buscar por termos diferentes.'
+            }
           </p>
+
+          {hasSearchQuery && (
+            <div className="space-y-3">
+              <Button
+                color="primary"
+                variant="solid"
+                size="lg"
+                isLoading={isSearchingWeb}
+                onPress={handleWebSearch}
+                startContent={!isSearchingWeb && <Globe className="w-5 h-5" />}
+                className="font-medium"
+              >
+                {isSearchingWeb ? 'Buscando na web...' : 'Buscar acadêmico na web'}
+              </Button>
+
+              {webSearchError && (
+                <p className="text-sm text-danger-500">{webSearchError}</p>
+              )}
+
+              <p className="text-xs text-default-400 max-w-sm mx-auto">
+                Usamos IA para buscar informações públicas sobre o acadêmico na internet
+              </p>
+            </div>
+          )}
         </div>
       )}
 
@@ -110,8 +163,6 @@ export function SearchResultsV2({
               <AcademicCardV2
                 key={academic.id}
                 academic={academic}
-                onEnrich={onEnrich}
-                isEnriching={enrichingIds.includes(academic.id)}
               />
             ))}
           </div>
