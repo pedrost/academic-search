@@ -65,7 +65,11 @@ export async function callGrokAPI(messages: GrokMessage[]): Promise<any> {
         model: "grok-3",
         messages,
         temperature: 0.1,
-        response_format: { type: "json_object" }
+        response_format: { type: "json_object" },
+        search: {
+          max_results: 10
+        },
+        stream: false
       }),
     });
 

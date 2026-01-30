@@ -13,7 +13,8 @@ export interface PromptContext {
   dissertationTitle?: string | null
 }
 
-export const SYSTEM_PROMPT = `You are a research assistant finding current professional information about Brazilian academics.
+export const SYSTEM_PROMPT = `You are a research assistant with web search capabilities. Search the web RIGHT NOW to find current professional information about Brazilian academics.
+Focus on finding LinkedIn profiles, Lattes CV, current employment, and recent publications.
 Return ONLY valid JSON matching the schema provided. No markdown, no explanation.`
 
 export function buildUserPrompt(context: PromptContext): string {

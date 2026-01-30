@@ -31,15 +31,18 @@ async function testGrokAPI() {
         messages: [
           {
             role: "system",
-            content: "You are a helpful assistant. Return ONLY valid JSON."
+            content: "You are a helpful assistant. Search the web and return ONLY valid JSON."
           },
           {
             role: "user",
-            content: "Return a simple JSON object with a single field 'test' set to 'success'"
+            content: "Search the web RIGHT NOW for today's weather in São Paulo, Brazil and return JSON with fields: { city: string, temperature: string, conditions: string, source: string }"
           }
         ],
         temperature: 0.1,
-        response_format: { type: "json_object" }
+        response_format: { type: "json_object" },
+        search: {
+          max_results: 5
+        }
       }),
     })
 
