@@ -7,6 +7,12 @@
 
 import { Sector } from '@prisma/client'
 
+export interface GrokSource {
+  url: string
+  title: string
+  context: string
+}
+
 export interface GrokResponse {
   employment: {
     jobTitle: string | null
@@ -15,6 +21,7 @@ export interface GrokResponse {
     city: string | null
     state: string | null
     confidence: 'high' | 'medium' | 'low'
+    context?: string | null
   }
   professional: {
     recentPublications: string[]
@@ -29,7 +36,11 @@ export interface GrokResponse {
     personalWebsite: string | null
     email: string | null
   }
-  sources: string[]
+  findings: {
+    summary: string
+    confidence: 'high' | 'medium' | 'low'
+  }
+  sources: GrokSource[]
 }
 
 export interface MappedAcademicUpdate {
@@ -57,8 +68,13 @@ export interface MappedAcademicUpdate {
     }
     employment?: {
       confidence: string
+      context?: string | null
     }
-    sources: string[]
+    findings?: {
+      summary: string
+      confidence: string
+    }
+    sources: GrokSource[]
     rawResponse?: any
   }
 
@@ -95,10 +111,11 @@ export function mapGrokResponse(response: GrokResponse): MappedAcademicUpdate {
       update.currentState = response.employment.state
     }
 
-    // Store confidence in metadata (no direct column for it)
-    if (response.employment.confidence) {
+    // Store confidence and context in metadata (no direct columns for these)
+    if (response.employment.confidence || response.employment.context) {
       update.grokMetadata.employment = {
-        confidence: response.employment.confidence
+        confidence: response.employment.confidence,
+        context: response.employment.context || null
       }
     }
   }
@@ -139,6 +156,14 @@ export function mapGrokResponse(response: GrokResponse): MappedAcademicUpdate {
         conferences: response.professional.conferences || [],
         awards: response.professional.awards || []
       }
+    }
+  }
+
+  // Store findings summary in metadata
+  if (response.findings) {
+    update.grokMetadata.findings = {
+      summary: response.findings.summary,
+      confidence: response.findings.confidence
     }
   }
 
