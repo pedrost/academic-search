@@ -11,7 +11,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { callGrokAPI } from '@/lib/grok/client'
 import { SYSTEM_PROMPT, buildUserPrompt } from '@/lib/grok/prompts'
-import { parseGrokResponse, mapGrokResponse } from '@/lib/grok/mapper'
+import { parseGrokResponse, mapGrokResponse, type GrokMetadata } from '@/lib/grok/mapper'
 
 export async function GET(request: NextRequest) {
   try {
@@ -106,6 +106,7 @@ export async function GET(request: NextRequest) {
 
     // Map response to database fields
     const updateData = mapGrokResponse(parsedResponse)
+    const metadata = updateData.grokMetadata as unknown as GrokMetadata
 
     // Update academic record
     const updatedAcademic = await prisma.academic.update({
@@ -121,10 +122,10 @@ export async function GET(request: NextRequest) {
         jobTitle: updateData.currentJobTitle,
         company: updateData.currentCompany,
         sector: updateData.currentSector,
-        professionalDataCount: updateData.grokMetadata.professional
-          ? Object.values(updateData.grokMetadata.professional).flat().length
+        professionalDataCount: metadata.professional
+          ? Object.values(metadata.professional).flat().length
           : 0,
-        sourcesCount: updateData.grokMetadata.sources.length
+        sourcesCount: metadata.sources.length
       }
     })
 

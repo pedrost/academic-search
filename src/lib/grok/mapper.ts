@@ -5,12 +5,34 @@
  * Follows the rule: Only store in grokMetadata what cannot be mapped to existing columns.
  */
 
-import { Sector } from '@prisma/client'
+import { Sector, Prisma } from '@prisma/client'
 
 export interface GrokSource {
   url: string
   title: string
   context: string
+}
+
+export interface GrokMetadata {
+  sources: GrokSource[]
+  employment?: {
+    confidence: 'high' | 'medium' | 'low'
+    context: string | null
+  }
+  social?: {
+    twitterHandle?: string | null
+    personalWebsite?: string | null
+  }
+  professional?: {
+    recentPublications: string[]
+    researchProjects: string[]
+    conferences: string[]
+    awards: string[]
+  }
+  findings?: {
+    summary: string
+    confidence: 'high' | 'medium' | 'low'
+  }
 }
 
 export interface GrokResponse {
@@ -55,7 +77,7 @@ export interface MappedAcademicUpdate {
   email?: string | null
 
   // Overflow data (stored in grokMetadata JSON field)
-  grokMetadata: any
+  grokMetadata: Prisma.InputJsonValue
 
   // Enrichment timestamp
   grokEnrichedAt: Date
@@ -65,10 +87,11 @@ export interface MappedAcademicUpdate {
  * Map Grok API response to Academic database update object
  */
 export function mapGrokResponse(response: GrokResponse): MappedAcademicUpdate {
-  const update: MappedAcademicUpdate = {
-    grokMetadata: {
-      sources: response.sources || []
-    },
+  const metadata: GrokMetadata = {
+    sources: response.sources || []
+  }
+
+  const update: Partial<MappedAcademicUpdate> = {
     grokEnrichedAt: new Date()
   }
 
@@ -92,7 +115,7 @@ export function mapGrokResponse(response: GrokResponse): MappedAcademicUpdate {
 
     // Store confidence and context in metadata (no direct columns for these)
     if (response.employment.confidence || response.employment.context) {
-      update.grokMetadata.employment = {
+      metadata.employment = {
         confidence: response.employment.confidence,
         context: response.employment.context || null
       }
@@ -113,7 +136,7 @@ export function mapGrokResponse(response: GrokResponse): MappedAcademicUpdate {
 
     // Store overflow social fields in metadata
     if (response.social.twitterHandle || response.social.personalWebsite) {
-      update.grokMetadata.social = {
+      metadata.social = {
         twitterHandle: response.social.twitterHandle,
         personalWebsite: response.social.personalWebsite
       }
@@ -129,7 +152,7 @@ export function mapGrokResponse(response: GrokResponse): MappedAcademicUpdate {
       response.professional.awards?.length > 0
 
     if (hasAnyProfessional) {
-      update.grokMetadata.professional = {
+      metadata.professional = {
         recentPublications: response.professional.recentPublications || [],
         researchProjects: response.professional.researchProjects || [],
         conferences: response.professional.conferences || [],
@@ -140,13 +163,17 @@ export function mapGrokResponse(response: GrokResponse): MappedAcademicUpdate {
 
   // Store findings summary in metadata
   if (response.findings) {
-    update.grokMetadata.findings = {
+    metadata.findings = {
       summary: response.findings.summary,
       confidence: response.findings.confidence
     }
   }
 
-  return update
+  // Cast metadata to Prisma.InputJsonValue and return
+  return {
+    ...update,
+    grokMetadata: metadata as unknown as Prisma.InputJsonValue
+  } as MappedAcademicUpdate
 }
 
 /**
