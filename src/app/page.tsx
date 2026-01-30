@@ -50,7 +50,7 @@ export default function HomePage() {
     <main className="min-h-screen">
       {/* Hero Section */}
       <section className="relative overflow-hidden bg-gradient-to-br from-primary-600 via-primary-700 to-accent-600 text-white">
-        <div className="absolute inset-0 bg-grid-white/[0.05] bg-[size:60px_60px]" />
+        <div className="absolute inset-0 bg-grid-white/[0.05] bg-[size:60px_60px]" aria-hidden="true" />
         <div className="container mx-auto px-4 py-16 md:py-24 relative">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -59,7 +59,7 @@ export default function HomePage() {
             className="max-w-3xl mx-auto text-center"
           >
             <div className="inline-flex items-center gap-2 bg-white/10 backdrop-blur-sm px-4 py-2 rounded-full mb-6">
-              <Sparkles className="w-4 h-4" />
+              <Sparkles className="w-4 h-4" aria-hidden="true" />
               <span className="text-sm font-medium">Enriquecido com IA</span>
             </div>
 
@@ -70,22 +70,22 @@ export default function HomePage() {
               </span>
             </h1>
 
-            <p className="text-lg md:text-xl text-blue-100 mb-8 max-w-2xl mx-auto">
+            <p className="text-lg md:text-xl text-white/90 mb-8 max-w-2xl mx-auto">
               Explore perfis de acadêmicos, dissertações e teses de mestrado e doutorado.
               Dados enriquecidos com informações profissionais atualizadas.
             </p>
 
             <div className="flex flex-wrap items-center justify-center gap-6 text-sm">
               <div className="flex items-center gap-2">
-                <GraduationCap className="w-5 h-5 text-accent-300" />
+                <GraduationCap className="w-5 h-5 text-accent-300" aria-hidden="true" />
                 <span>Milhares de perfis</span>
               </div>
               <div className="flex items-center gap-2">
-                <Search className="w-5 h-5 text-accent-300" />
+                <Search className="w-5 h-5 text-accent-300" aria-hidden="true" />
                 <span>Busca avançada</span>
               </div>
               <div className="flex items-center gap-2">
-                <Sparkles className="w-5 h-5 text-accent-300" />
+                <Sparkles className="w-5 h-5 text-accent-300" aria-hidden="true" />
                 <span>Dados atualizados</span>
               </div>
             </div>
