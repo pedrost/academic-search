@@ -1,0 +1,5 @@
+export { ProfileHeader } from './ProfileHeader'
+export { OverviewTab } from './OverviewTab'
+export { TimelineTab } from './TimelineTab'
+export { PublicationsTab } from './PublicationsTab'
+export { EnrichmentLogTab } from './EnrichmentLogTab'
