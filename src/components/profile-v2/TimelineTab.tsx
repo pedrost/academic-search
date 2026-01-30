@@ -34,6 +34,21 @@ const eventColors = {
   award: 'warning',
 } as const
 
+// Fixed Tailwind classes for each event type (dynamic classes don't work)
+const eventBgClasses = {
+  degree: 'bg-secondary-100',
+  dissertation: 'bg-primary-100',
+  employment: 'bg-success-100',
+  award: 'bg-warning-100',
+}
+
+const eventIconClasses = {
+  degree: 'text-secondary-600',
+  dissertation: 'text-primary-600',
+  employment: 'text-success-600',
+  award: 'text-warning-600',
+}
+
 function buildTimeline(academic: AcademicWithDissertations): TimelineEvent[] {
   const events: TimelineEvent[] = []
 
@@ -44,7 +59,7 @@ function buildTimeline(academic: AcademicWithDissertations): TimelineEvent[] {
       type: 'degree',
       year: academic.graduationYear,
       title: DEGREE_LEVEL_LABELS[academic.degreeLevel],
-      subtitle: academic.institution || 'Instituicao nao informada',
+      subtitle: academic.institution || 'Instituição não informada',
       details: academic.researchField || undefined,
     })
   }
@@ -56,7 +71,7 @@ function buildTimeline(academic: AcademicWithDissertations): TimelineEvent[] {
       type: 'dissertation',
       year: diss.defenseYear,
       title: diss.title,
-      subtitle: `${diss.institution} · ${diss.program || 'Programa nao informado'}`,
+      subtitle: `${diss.institution} · ${diss.program || 'Programa não informado'}`,
       details: diss.advisorName ? `Orientador: ${diss.advisorName}` : undefined,
     })
   })
@@ -75,8 +90,8 @@ function buildTimeline(academic: AcademicWithDissertations): TimelineEvent[] {
         id: 'job-' + i,
         type: 'employment',
         year: job.year || null,
-        title: job.jobTitle || 'Cargo nao informado',
-        subtitle: job.company || 'Empresa nao informada',
+        title: job.jobTitle || 'Cargo não informado',
+        subtitle: job.company || 'Empresa não informada',
         details: job.location,
       })
     })
@@ -89,7 +104,7 @@ function buildTimeline(academic: AcademicWithDissertations): TimelineEvent[] {
       type: 'employment',
       year: null,
       title: academic.currentJobTitle,
-      subtitle: academic.currentCompany || 'Empresa nao informada',
+      subtitle: academic.currentCompany || 'Empresa não informada',
       details: [academic.currentCity, academic.currentState].filter(Boolean).join(', '),
     })
   }
@@ -141,12 +156,12 @@ export function TimelineTab({ academic }: Props) {
           >
             <Checkbox value="degree" size="sm">
               <span className="flex items-center gap-1">
-                <GraduationCap className="w-4 h-4 text-secondary-500" /> Formacao
+                <GraduationCap className="w-4 h-4 text-secondary-500" /> Formação
               </span>
             </Checkbox>
             <Checkbox value="dissertation" size="sm">
               <span className="flex items-center gap-1">
-                <FileText className="w-4 h-4 text-primary-500" /> Dissertacoes
+                <FileText className="w-4 h-4 text-primary-500" /> Dissertações
               </span>
             </Checkbox>
             <Checkbox value="employment" size="sm">
@@ -193,8 +208,8 @@ export function TimelineTab({ academic }: Props) {
                     >
                       <Card>
                         <CardBody className="flex-row gap-3 items-start">
-                          <div className={`p-2 rounded-lg bg-${color}-100`}>
-                            <Icon className={`w-5 h-5 text-${color}-600`} />
+                          <div className={`p-2 rounded-lg ${eventBgClasses[event.type]}`}>
+                            <Icon className={`w-5 h-5 ${eventIconClasses[event.type]}`} />
                           </div>
                           <div className="flex-1 min-w-0">
                             <h4 className="font-medium line-clamp-2">{event.title}</h4>
@@ -204,10 +219,10 @@ export function TimelineTab({ academic }: Props) {
                             )}
                           </div>
                           <Chip size="sm" variant="flat" color={color}>
-                            {event.type === 'degree' && 'Formacao'}
-                            {event.type === 'dissertation' && 'Dissertacao'}
+                            {event.type === 'degree' && 'Formação'}
+                            {event.type === 'dissertation' && 'Dissertação'}
                             {event.type === 'employment' && 'Emprego'}
-                            {event.type === 'award' && 'Premio'}
+                            {event.type === 'award' && 'Prêmio'}
                           </Chip>
                         </CardBody>
                       </Card>
