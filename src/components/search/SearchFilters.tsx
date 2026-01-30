@@ -11,6 +11,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Search, X } from 'lucide-react'
 import {
   RESEARCH_FIELDS,
   MS_CITIES,
@@ -43,11 +44,42 @@ export function SearchFilters({ filters, onFilterChange, onSearch }: Props) {
   }
 
   return (
-    <Card className="w-full">
-      <CardHeader>
-        <CardTitle>Filtros</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-6">
+    <div className="lg:sticky lg:top-4">
+      <Card className="w-full shadow-lg border-0 bg-white/80 backdrop-blur-sm">
+        <CardHeader className="border-b bg-gradient-to-r from-primary-50 to-accent-50">
+          <CardTitle className="flex items-center gap-2 text-primary-700">
+            <Search className="w-5 h-5" />
+            Filtros de Busca
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-6 pt-6">
+          {/* Active Filters Summary */}
+          {(filters.query || (filters.degreeLevel && filters.degreeLevel.length > 0) || (filters.currentSector && filters.currentSector.length > 0)) && (
+            <div className="flex flex-wrap gap-2 pb-4 border-b">
+              {filters.query && (
+                <span className="inline-flex items-center gap-1 px-3 py-1 bg-primary-100 text-primary-700 rounded-full text-xs font-medium">
+                  {filters.query}
+                  <X
+                    className="w-3 h-3 cursor-pointer hover:text-primary-900"
+                    onClick={() => onFilterChange({ ...filters, query: '' })}
+                  />
+                </span>
+              )}
+              {filters.degreeLevel?.map(level => (
+                <span key={level} className="inline-flex items-center gap-1 px-3 py-1 bg-accent-100 text-accent-700 rounded-full text-xs font-medium">
+                  {DEGREE_LEVEL_LABELS[level as keyof typeof DEGREE_LEVEL_LABELS]}
+                  <X
+                    className="w-3 h-3 cursor-pointer"
+                    onClick={() => {
+                      const updated = filters.degreeLevel?.filter(l => l !== level) || []
+                      onFilterChange({ ...filters, degreeLevel: updated })
+                    }}
+                  />
+                </span>
+              ))}
+            </div>
+          )}
+
         <div>
           <label className="text-sm font-medium mb-2 block">
             Buscar por nome ou palavra-chave
@@ -190,10 +222,16 @@ export function SearchFilters({ filters, onFilterChange, onSearch }: Props) {
           </div>
         </div>
 
-        <Button onClick={onSearch} className="w-full">
-          Buscar
+        <Button
+          onClick={onSearch}
+          className="w-full bg-gradient-to-r from-primary-600 to-accent-600 hover:from-primary-700 hover:to-accent-700 text-white font-semibold shadow-lg hover:shadow-xl transition-all"
+          size="lg"
+        >
+          <Search className="w-4 h-4 mr-2" />
+          Buscar Acadêmicos
         </Button>
       </CardContent>
     </Card>
+    </div>
   )
 }
