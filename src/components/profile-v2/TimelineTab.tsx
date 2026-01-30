@@ -45,7 +45,7 @@ function buildTimeline(academic: AcademicWithDissertations): TimelineEvent[] {
       year: academic.graduationYear,
       title: DEGREE_LEVEL_LABELS[academic.degreeLevel],
       subtitle: academic.institution || 'Instituicao nao informada',
-      details: academic.researchField,
+      details: academic.researchField || undefined,
     })
   }
 
