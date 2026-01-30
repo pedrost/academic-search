@@ -1,12 +1,13 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { SearchFilters } from '@/components/search/SearchFilters'
-import { SearchResults } from '@/components/search/SearchResults'
+import { SearchFiltersV2, SearchResultsV2 } from '@/components/search-v2'
 import { SearchFilters as SearchFiltersType, SearchResult } from '@/types'
+import { useDebounce } from '@/hooks/useDebounce'
 import { motion } from 'framer-motion'
 import { GraduationCap, Search, Sparkles } from 'lucide-react'
+import { Chip } from '@nextui-org/react'
 
 async function fetchAcademics(
   filters: SearchFiltersType,
@@ -31,61 +32,110 @@ async function fetchAcademics(
   return res.json()
 }
 
+async function fetchStats(): Promise<{ total: number }> {
+  const res = await fetch('/api/academics/search?page=1')
+  if (!res.ok) return { total: 0 }
+  const data = await res.json()
+  return { total: data.total }
+}
+
 export default function HomePage() {
   const [filters, setFilters] = useState<SearchFiltersType>({})
   const [page, setPage] = useState(1)
-  const [searchTrigger, setSearchTrigger] = useState(0)
+  const [enrichingIds, setEnrichingIds] = useState<string[]>([])
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['academics', filters, page, searchTrigger],
-    queryFn: () => fetchAcademics(filters, page),
+  // Debounce text search only
+  const debouncedQuery = useDebounce(filters.query, 300)
+
+  // Create effective filters with debounced query
+  const effectiveFilters = {
+    ...filters,
+    query: debouncedQuery,
+  }
+
+  // Reset page when filters change
+  useEffect(() => {
+    setPage(1)
+  }, [
+    debouncedQuery,
+    filters.researchField,
+    filters.degreeLevel,
+    filters.currentSector,
+    filters.currentCity,
+    filters.graduationYearMin,
+    filters.graduationYearMax,
+  ])
+
+  const { data: stats } = useQuery({
+    queryKey: ['stats'],
+    queryFn: fetchStats,
+    staleTime: 5 * 60 * 1000, // 5 minutes
   })
 
-  const handleSearch = () => {
-    setPage(1)
-    setSearchTrigger((t) => t + 1)
+  const { data, isLoading, isFetching } = useQuery({
+    queryKey: ['academics', effectiveFilters, page],
+    queryFn: () => fetchAcademics(effectiveFilters, page),
+    placeholderData: (previousData) => previousData,
+  })
+
+  const handleEnrich = async (id: string) => {
+    setEnrichingIds((prev) => [...prev, id])
+    try {
+      const res = await fetch(`/api/search-academic?academicId=${id}`)
+      if (!res.ok) throw new Error('Failed to enrich')
+      // Refetch to update the card
+      // queryClient handled by the hook
+    } finally {
+      setEnrichingIds((prev) => prev.filter((i) => i !== id))
+    }
   }
 
   return (
     <main className="min-h-screen">
       {/* Hero Section */}
-      <section className="relative overflow-hidden bg-gradient-to-br from-primary-600 via-primary-700 to-accent-600 text-white">
-        <div className="absolute inset-0 bg-grid-white/[0.05] bg-[size:60px_60px]" aria-hidden="true" />
-        <div className="container mx-auto px-4 py-16 md:py-24 relative">
+      <section className="relative overflow-hidden bg-gradient-to-br from-primary-600 via-primary-700 to-violet-600 text-white">
+        <div
+          className="absolute inset-0 bg-grid-white/[0.05] bg-[size:60px_60px]"
+          aria-hidden="true"
+        />
+        <div className="container mx-auto px-4 py-12 md:py-16 relative">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6 }}
             className="max-w-3xl mx-auto text-center"
           >
-            <div className="inline-flex items-center gap-2 bg-white/10 backdrop-blur-sm px-4 py-2 rounded-full mb-6">
-              <Sparkles className="w-4 h-4" aria-hidden="true" />
-              <span className="text-sm font-medium">Enriquecido com IA</span>
-            </div>
+            <Chip
+              color="secondary"
+              variant="flat"
+              className="mb-4 bg-white/10 text-white"
+              startContent={<Sparkles className="w-4 h-4" />}
+            >
+              Enriquecido com IA
+            </Chip>
 
-            <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold mb-6 leading-tight">
+            <h1 className="text-3xl md:text-4xl lg:text-5xl font-bold mb-4 leading-tight">
               Encontre Pesquisadores
-              <span className="block bg-gradient-to-r from-accent-200 to-accent-400 bg-clip-text text-transparent">
+              <span className="block bg-gradient-to-r from-violet-200 to-violet-400 bg-clip-text text-transparent">
                 em Mato Grosso do Sul
               </span>
             </h1>
 
-            <p className="text-lg md:text-xl text-white/90 mb-8 max-w-2xl mx-auto">
+            <p className="text-base md:text-lg text-white/90 mb-6 max-w-2xl mx-auto">
               Explore perfis de acadêmicos, dissertações e teses de mestrado e doutorado.
-              Dados enriquecidos com informações profissionais atualizadas.
             </p>
 
-            <div className="flex flex-wrap items-center justify-center gap-6 text-sm">
+            <div className="flex flex-wrap items-center justify-center gap-4 text-sm">
               <div className="flex items-center gap-2">
-                <GraduationCap className="w-5 h-5 text-accent-300" aria-hidden="true" />
-                <span>Milhares de perfis</span>
+                <GraduationCap className="w-5 h-5 text-violet-300" aria-hidden="true" />
+                <span>{stats?.total || '...'} perfis</span>
               </div>
               <div className="flex items-center gap-2">
-                <Search className="w-5 h-5 text-accent-300" aria-hidden="true" />
-                <span>Busca avançada</span>
+                <Search className="w-5 h-5 text-violet-300" aria-hidden="true" />
+                <span>Busca instantânea</span>
               </div>
               <div className="flex items-center gap-2">
-                <Sparkles className="w-5 h-5 text-accent-300" aria-hidden="true" />
+                <Sparkles className="w-5 h-5 text-violet-300" aria-hidden="true" />
                 <span>Dados atualizados</span>
               </div>
             </div>
@@ -104,22 +154,20 @@ export default function HomePage() {
       </section>
 
       {/* Search Section */}
-      <section className="container mx-auto px-4 py-8 md:py-12">
+      <section className="container mx-auto px-4 py-8">
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
           <aside className="lg:col-span-1">
-            <SearchFilters
-              filters={filters}
-              onFilterChange={setFilters}
-              onSearch={handleSearch}
-            />
+            <SearchFiltersV2 filters={filters} onFilterChange={setFilters} />
           </aside>
 
           <div className="lg:col-span-3">
-            <SearchResults
+            <SearchResultsV2
               result={data}
-              isLoading={isLoading}
+              isLoading={isLoading || isFetching}
               page={page}
               onPageChange={setPage}
+              onEnrich={handleEnrich}
+              enrichingIds={enrichingIds}
             />
           </div>
         </div>
