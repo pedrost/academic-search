@@ -49,7 +49,7 @@ export function ScraperStatus() {
     refetchInterval: 5000,
   })
 
-  const [selectedInstitution, setSelectedInstitution] = useState(MS_INSTITUTIONS[0])
+  const [selectedInstitution, setSelectedInstitution] = useState<string>(MS_INSTITUTIONS[0])
   const [isStarting, setIsStarting] = useState(false)
 
   const startScraper = async () => {

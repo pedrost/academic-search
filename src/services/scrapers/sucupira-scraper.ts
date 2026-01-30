@@ -114,7 +114,7 @@ async function searchCAPESDataStore(
 
     // Extract JSON from page
     const content = await page.content()
-    const jsonMatch = content.match(/<pre>(.*?)<\/pre>/s)
+    const jsonMatch = content.match(/<pre>([\s\S]*?)<\/pre>/)
 
     if (!jsonMatch) {
       await page.close()

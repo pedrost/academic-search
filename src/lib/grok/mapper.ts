@@ -55,28 +55,7 @@ export interface MappedAcademicUpdate {
   email?: string | null
 
   // Overflow data (stored in grokMetadata JSON field)
-  grokMetadata: {
-    professional?: {
-      recentPublications: string[]
-      researchProjects: string[]
-      conferences: string[]
-      awards: string[]
-    }
-    social?: {
-      twitterHandle: string | null
-      personalWebsite: string | null
-    }
-    employment?: {
-      confidence: string
-      context?: string | null
-    }
-    findings?: {
-      summary: string
-      confidence: string
-    }
-    sources: GrokSource[]
-    rawResponse?: any
-  }
+  grokMetadata: any
 
   // Enrichment timestamp
   grokEnrichedAt: Date
