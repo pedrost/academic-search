@@ -1,6 +1,6 @@
 'use client'
 
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { AcademicWithDissertations } from '@/types'
 import { DEGREE_LEVEL_LABELS, SECTOR_LABELS } from '@/lib/constants'
+import { Sparkles } from 'lucide-react'
 
 async function fetchAcademic(id: string): Promise<AcademicWithDissertations> {
   const res = await fetch(`/api/academics/${id}`)
@@ -15,13 +16,30 @@ async function fetchAcademic(id: string): Promise<AcademicWithDissertations> {
   return res.json()
 }
 
+async function enrichWithGrok(academicId: string) {
+  const res = await fetch(`/api/search-academic?academicId=${academicId}`)
+  if (!res.ok) {
+    const error = await res.json()
+    throw new Error(error.error || 'Failed to enrich')
+  }
+  return res.json()
+}
+
 export default function AcademicDetailPage() {
   const params = useParams()
   const id = params.id as string
+  const queryClient = useQueryClient()
 
   const { data: academic, isLoading, error } = useQuery({
     queryKey: ['academic', id],
     queryFn: () => fetchAcademic(id),
+  })
+
+  const enrichMutation = useMutation({
+    mutationFn: () => enrichWithGrok(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['academic', id] })
+    }
   })
 
   if (isLoading) {
@@ -61,25 +79,49 @@ export default function AcademicDetailPage() {
                   </p>
                 )}
               </div>
-              <div className="flex gap-2">
-                {academic.degreeLevel && (
-                  <Badge variant="secondary">
-                    {DEGREE_LEVEL_LABELS[academic.degreeLevel]}
-                  </Badge>
-                )}
-                {academic.enrichmentStatus && (
-                  <Badge
-                    variant={
-                      academic.enrichmentStatus === 'COMPLETE'
-                        ? 'default'
-                        : 'outline'
-                    }
+              <div className="flex gap-2 items-start">
+                <div className="flex flex-col gap-2">
+                  <div className="flex gap-2">
+                    {academic.degreeLevel && (
+                      <Badge variant="secondary">
+                        {DEGREE_LEVEL_LABELS[academic.degreeLevel]}
+                      </Badge>
+                    )}
+                    {academic.enrichmentStatus && (
+                      <Badge
+                        variant={
+                          academic.enrichmentStatus === 'COMPLETE'
+                            ? 'default'
+                            : 'outline'
+                        }
+                      >
+                        {academic.enrichmentStatus === 'COMPLETE'
+                          ? 'Dados completos'
+                          : 'Dados parciais'}
+                      </Badge>
+                    )}
+                  </div>
+                  <Button
+                    onClick={() => enrichMutation.mutate()}
+                    disabled={enrichMutation.isPending}
+                    size="sm"
+                    variant="outline"
+                    className="w-full"
                   >
-                    {academic.enrichmentStatus === 'COMPLETE'
-                      ? 'Dados completos'
-                      : 'Dados parciais'}
-                  </Badge>
-                )}
+                    <Sparkles className="w-4 h-4 mr-2" />
+                    {enrichMutation.isPending ? 'Enriquecendo...' : 'Enriquecer com Grok'}
+                  </Button>
+                  {enrichMutation.isError && (
+                    <p className="text-xs text-red-600">
+                      Erro ao enriquecer dados
+                    </p>
+                  )}
+                  {enrichMutation.isSuccess && (
+                    <p className="text-xs text-green-600">
+                      Dados atualizados!
+                    </p>
+                  )}
+                </div>
               </div>
             </div>
           </CardHeader>
