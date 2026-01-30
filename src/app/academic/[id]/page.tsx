@@ -10,6 +10,7 @@ import {
   TimelineTab,
   PublicationsTab,
   EnrichmentLogTab,
+  EnrichmentProgress,
 } from '@/components/profile-v2'
 import { AcademicWithDissertations } from '@/types'
 
@@ -66,6 +67,12 @@ export default function AcademicDetailPage() {
 
   return (
     <main className="min-h-screen bg-gray-50">
+      {/* Enrichment Progress Modal */}
+      <EnrichmentProgress
+        isOpen={enrichMutation.isPending}
+        academicName={academic.name}
+      />
+
       <div className="container mx-auto py-6 px-4 max-w-5xl">
         <ProfileHeader
           academic={academic}

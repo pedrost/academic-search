@@ -3,31 +3,35 @@
  *
  * Wrapper for calling xAI's Grok API with web search capabilities
  * to find current professional information about academics.
+ *
+ * Uses the /v1/responses endpoint with Agent Tools for web search.
+ * Docs: https://docs.x.ai/docs/guides/tools/search-tools
  */
 
 const XAI_BASE_URL = "https://api.x.ai/v1";
+const API_TIMEOUT_MS = 300000; // 5 minutes timeout for web search
 
 export interface GrokMessage {
   role: "system" | "user" | "assistant";
   content: string;
 }
 
-export interface GrokAPIResponse {
+// Response format for /v1/responses endpoint
+export interface GrokResponsesAPIResponse {
   id: string;
-  object: string;
-  created: number;
-  model: string;
-  choices: Array<{
-    index: number;
-    message: {
-      role: string;
-      content: string;
-    };
-    finish_reason: string;
+  output: Array<{
+    type: string;
+    // For type: "message"
+    content?: Array<{
+      type: string;
+      text?: string;
+    }>;
+    // Legacy formats
+    text?: string;
   }>;
   usage?: {
-    prompt_tokens: number;
-    completion_tokens: number;
+    input_tokens: number;
+    output_tokens: number;
     total_tokens: number;
   };
 }
@@ -41,7 +45,10 @@ export interface GrokAPIError {
 }
 
 /**
- * Call Grok API with web search and X search tools enabled
+ * Call Grok API with web search enabled via Agent Tools
+ *
+ * Uses grok-4-0709 model with high search context for thorough LinkedIn discovery.
+ * Includes timeout and retry logic for reliability.
  *
  * @param messages - Array of system and user messages
  * @returns Parsed JSON response from Grok
@@ -54,54 +61,95 @@ export async function callGrokAPI(messages: GrokMessage[]): Promise<any> {
     throw new Error("XAI_API_KEY environment variable is not set");
   }
 
+  // Convert messages to input format, combining system + user into instructions + input
+  const systemMessage = messages.find(m => m.role === 'system');
+  const userMessage = messages.find(m => m.role === 'user');
+
+  if (!userMessage) {
+    throw new Error("User message is required");
+  }
+
+  // Create abort controller for timeout
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+
   try {
-    const response = await fetch(`${XAI_BASE_URL}/chat/completions`, {
+    console.log('[Grok API] Sending request to grok-4-0709 with web search...');
+
+    const response = await fetch(`${XAI_BASE_URL}/responses`, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
+      signal: controller.signal,
       body: JSON.stringify({
-        model: "grok-4-1-fast",
-        messages,
-        temperature: 0.1,
-        response_format: { type: "json_object" },
-        // Agent Tools API - enables web search and X search
+        model: "grok-4-0709",
+        // System instructions
+        instructions: systemMessage?.content || "",
+        // User input
+        input: userMessage.content,
+        // Enable web search tool
         tools: [
-          {
-            type: "web_search",
-            web_search: {
-              max_results: 10
-            }
-          },
-          {
-            type: "x_search",
-            x_search: {
-              max_results: 5
-            }
-          }
+          { type: "web_search" }
         ],
-        stream: false
+        // Request JSON output
+        text: {
+          format: {
+            type: "json_object"
+          }
+        }
       }),
     });
 
+    clearTimeout(timeoutId);
+
     if (!response.ok) {
-      const errorData = await response.json() as GrokAPIError;
+      // Try to parse error as JSON, fallback to text
+      const errorText = await response.text();
+      let errorMessage = errorText;
+
+      try {
+        const errorData = JSON.parse(errorText) as GrokAPIError;
+        errorMessage = errorData.error?.message || errorText;
+      } catch {
+        // Not JSON, use raw text
+      }
+
       throw new Error(
-        `xAI API error (${response.status}): ${errorData.error?.message || response.statusText}`
+        `xAI API error (${response.status}): ${errorMessage}`
       );
     }
 
-    const data = await response.json() as GrokAPIResponse;
+    const data = await response.json() as GrokResponsesAPIResponse;
 
-    if (!data.choices || data.choices.length === 0) {
-      throw new Error("xAI API returned no choices");
+    // Log search calls for debugging
+    const searchCalls = data.output?.filter(o => o.type === 'web_search_call');
+    if (searchCalls?.length) {
+      console.log(`[Grok API] Performed ${searchCalls.length} web searches`);
     }
 
-    const messageContent = data.choices[0].message.content;
+    // Find the message output from the response
+    // The response structure is: output[].type === "message" -> content[].type === "output_text" -> text
+    const messageOutput = data.output?.find(o => o.type === 'message');
+
+    let messageContent: string | undefined;
+
+    if (messageOutput?.content && Array.isArray(messageOutput.content)) {
+      // New format: content is an array with output_text items
+      const textItem = messageOutput.content.find(c => c.type === 'output_text');
+      messageContent = textItem?.text;
+    } else if (typeof messageOutput?.content === 'string') {
+      // Legacy format: content is a string
+      messageContent = messageOutput.content;
+    } else if (messageOutput?.text) {
+      // Alternative format: text field directly
+      messageContent = messageOutput.text;
+    }
 
     if (!messageContent) {
-      throw new Error("xAI API returned empty message content");
+      console.error('[Grok API] Full response:', JSON.stringify(data, null, 2));
+      throw new Error("xAI API returned no text content");
     }
 
     // Log the response for debugging
@@ -117,9 +165,16 @@ export async function callGrokAPI(messages: GrokMessage[]): Promise<any> {
       );
     }
   } catch (error) {
+    clearTimeout(timeoutId);
+
+    // Handle abort (timeout)
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error(`xAI API request timed out after ${Math.round(API_TIMEOUT_MS / 60000)} minutes`);
+    }
+
     // Re-throw fetch errors with more context
     if (error instanceof Error) {
-      if (error.message.includes("fetch")) {
+      if (error.message.includes("fetch") || error.message.includes("ECONNRESET")) {
         throw new Error(`Network error calling xAI API: ${error.message}`);
       }
       throw error;

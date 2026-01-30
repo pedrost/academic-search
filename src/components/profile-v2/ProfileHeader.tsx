@@ -133,12 +133,21 @@ export function ProfileHeader({ academic, onEnrich, isEnriching }: Props) {
               )}
               <Button
                 variant="solid"
-                className="bg-white text-primary-600 hover:bg-white/90 px-4 gap-2 font-medium"
+                className={`px-4 gap-2 font-medium ${
+                  academic.enrichmentStatus === 'COMPLETE'
+                    ? 'bg-white/50 text-white cursor-not-allowed'
+                    : 'bg-white text-primary-600 hover:bg-white/90'
+                }`}
                 isLoading={isEnriching}
+                isDisabled={academic.enrichmentStatus === 'COMPLETE'}
                 onPress={onEnrich}
                 startContent={!isEnriching && <Sparkles className="w-4 h-4" />}
               >
-                {isEnriching ? 'Enriquecendo...' : 'Enriquecer'}
+                {academic.enrichmentStatus === 'COMPLETE'
+                  ? 'Já enriquecido'
+                  : isEnriching
+                    ? 'Enriquecendo...'
+                    : 'Enriquecer'}
               </Button>
             </div>
           </div>

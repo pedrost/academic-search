@@ -1,80 +1,144 @@
 /**
- * Test Grok API Connection
+ * Test script to debug Grok API calls
  *
  * Run with: npx tsx scripts/test-grok-api.ts
  */
 
 import 'dotenv/config'
+import { SYSTEM_PROMPT, buildUserPrompt } from '../src/lib/grok/prompts'
 
-const XAI_BASE_URL = "https://api.x.ai/v1"
+const XAI_BASE_URL = "https://api.x.ai/v1";
+const API_TIMEOUT_MS = 300000; // 5 minutes timeout
 
 async function testGrokAPI() {
-  const apiKey = process.env.XAI_API_KEY
+  const apiKey = process.env.XAI_API_KEY;
 
   if (!apiKey) {
-    console.error('❌ XAI_API_KEY not found in environment')
-    process.exit(1)
+    console.error("❌ XAI_API_KEY not set in environment");
+    process.exit(1);
   }
 
-  console.log('✓ API Key found:', apiKey.substring(0, 10) + '...')
-  console.log('✓ Testing Grok API connection...\n')
+  console.log("✅ API Key found");
+  console.log("🔍 Testing with: ALEF FERNANDO BORILLE DOS SANTOS");
+  console.log(`⏱️  Timeout: ${API_TIMEOUT_MS / 60000} minutes\n`);
+
+  // Use the actual prompts from the app
+  const userPrompt = buildUserPrompt({
+    name: "ALEF FERNANDO BORILLE DOS SANTOS",
+    institution: "UFMS",
+    researchField: "Agronomia",
+    graduationYear: null,
+    dissertationTitle: null
+  });
+
+  console.log("📋 System Prompt (first 300 chars):");
+  console.log(SYSTEM_PROMPT.substring(0, 300) + "...\n");
+
+  console.log("📋 User Prompt (first 500 chars):");
+  console.log(userPrompt.substring(0, 500) + "...\n");
+
+  console.log("📤 Sending request to grok-4-0709 with web search...\n");
+
+  // Create abort controller for timeout
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
 
   try {
-    const response = await fetch(`${XAI_BASE_URL}/chat/completions`, {
+    const startTime = Date.now();
+
+    const response = await fetch(`${XAI_BASE_URL}/responses`, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
+      signal: controller.signal,
       body: JSON.stringify({
-        model: "grok-4-1-fast",
-        messages: [
-          {
-            role: "system",
-            content: "You are a helpful assistant. Search the web and return ONLY valid JSON."
-          },
-          {
-            role: "user",
-            content: "Search the web RIGHT NOW for today's weather in São Paulo, Brazil and return JSON with fields: { city: string, temperature: string, conditions: string, source: string }"
-          }
+        model: "grok-4-0709",
+        instructions: SYSTEM_PROMPT,
+        input: userPrompt,
+        tools: [
+          { type: "web_search" }
         ],
-        temperature: 0.1,
-        response_format: { type: "json_object" },
-        search: {
-          max_results: 5
+        text: {
+          format: {
+            type: "json_object"
+          }
         }
       }),
-    })
+    });
 
-    console.log('Response status:', response.status, response.statusText)
+    clearTimeout(timeoutId);
+
+    const elapsed = Date.now() - startTime;
+    console.log(`⏱️  Response received in ${Math.round(elapsed / 1000)}s`);
+    console.log(`📊 Status: ${response.status} ${response.statusText}\n`);
 
     if (!response.ok) {
-      const errorText = await response.text()
-      console.error('❌ API Error Response:', errorText)
-      process.exit(1)
+      const errorText = await response.text();
+      console.error("❌ API Error Response:");
+      console.error(errorText);
+      return;
     }
 
-    const data = await response.json()
-    console.log('\n✓ API Response:', JSON.stringify(data, null, 2))
+    const data = await response.json();
 
-    if (data.choices && data.choices[0]) {
-      const content = data.choices[0].message.content
-      console.log('\n✓ Message Content:', content)
+    // Log search calls
+    const searchCalls = data.output?.filter((o: any) => o.type === 'web_search_call');
+    if (searchCalls?.length) {
+      console.log(`🔎 Performed ${searchCalls.length} web searches`);
+    }
 
+    // Extract text content from the response
+    const messageOutput = data.output?.find((o: any) => o.type === 'message');
+
+    let messageContent: string | undefined;
+
+    if (messageOutput?.content && Array.isArray(messageOutput.content)) {
+      const textItem = messageOutput.content.find((c: any) => c.type === 'output_text');
+      messageContent = textItem?.text;
+    } else if (typeof messageOutput?.content === 'string') {
+      messageContent = messageOutput.content;
+    } else if (messageOutput?.text) {
+      messageContent = messageOutput.text;
+    }
+
+    if (messageContent) {
       try {
-        const parsed = JSON.parse(content)
-        console.log('\n✓ Parsed JSON:', parsed)
-        console.log('\n✅ Grok API is working correctly!')
+        const parsed = JSON.parse(messageContent);
+        console.log("\n✅ Parsed JSON Response:");
+        console.log(JSON.stringify(parsed, null, 2));
+
+        // Highlight key findings
+        console.log("\n" + "=".repeat(50));
+        console.log("🎯 KEY FINDINGS:");
+        console.log("=".repeat(50));
+        console.log(`   LinkedIn: ${parsed.social?.linkedinUrl || '❌ NOT FOUND'}`);
+        console.log(`   Lattes: ${parsed.social?.lattesUrl || '❌ NOT FOUND'}`);
+        console.log(`   Job: ${parsed.employment?.jobTitle || 'NOT FOUND'}`);
+        console.log(`   Company: ${parsed.employment?.company || 'NOT FOUND'}`);
+        console.log(`   Confidence: ${parsed.findings?.confidence || 'UNKNOWN'}`);
+        console.log(`   Summary: ${parsed.findings?.summary || 'N/A'}`);
+        console.log("=".repeat(50));
       } catch (e) {
-        console.error('\n❌ Failed to parse response as JSON')
-        console.error('Content was:', content)
+        console.error("❌ Failed to parse as JSON:", e);
+        console.log("Raw content:", messageContent);
       }
+    } else {
+      console.log("⚠️  No text content found in response");
+      console.log("Output types:", data.output?.map((o: any) => o.type));
+      console.log("Full response:", JSON.stringify(data, null, 2));
     }
 
   } catch (error) {
-    console.error('❌ Test failed:', error)
-    process.exit(1)
+    clearTimeout(timeoutId);
+
+    if (error instanceof Error && error.name === 'AbortError') {
+      console.error(`❌ Request timed out after ${API_TIMEOUT_MS / 60000} minutes`);
+    } else {
+      console.error("❌ Fetch error:", error);
+    }
   }
 }
 
-testGrokAPI()
+testGrokAPI();
