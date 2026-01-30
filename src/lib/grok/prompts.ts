@@ -1,8 +1,8 @@
 /**
  * Grok API Prompt Templates
  *
- * Prompts for finding current professional information about Brazilian academics
- * using xAI's Grok with web search capabilities.
+ * Prompts for finding LinkedIn profiles and professional information
+ * about Brazilian academics using xAI's Grok-4 with web search capabilities.
  */
 
 export interface PromptContext {
@@ -11,93 +11,220 @@ export interface PromptContext {
   graduationYear?: number | null
   researchField?: string | null
   dissertationTitle?: string | null
+  currentCompany?: string | null
+  currentCity?: string | null
+  currentState?: string | null
 }
 
-export const SYSTEM_PROMPT = `You are a research assistant specialized in finding Brazilian academics online. Your PRIMARY GOAL is to find their LinkedIn profile and current employment information.
+export const SYSTEM_PROMPT = `You are an expert at finding LinkedIn profiles of Brazilian academics.
 
-YOUR TASK:
-1. Search for the person's LinkedIn profile - this is your #1 priority
-2. Find their Lattes CV (Brazilian academic CV platform)
-3. Extract current job information
-4. All responses in Brazilian Portuguese
+YOUR #1 MISSION: Find the LinkedIn profile URL.
 
-SEARCH STRATEGY FOR LINKEDIN:
-- Search: "[person name]" site:linkedin.com/in Brasil
-- Search: "[person name]" "[institution]" LinkedIn
-- LinkedIn profiles are public - you should be able to find most academics
+When searching:
+- Search thoroughly using the person's name
+- Brazilian professionals often use abbreviated names on LinkedIn
+- Look at multiple results and reason about which profile best matches
+- Consider partial matches - location or education might not be fully updated
 
-IMPORTANT:
-- Return the actual URLs you find from your search
-- If you genuinely cannot find a LinkedIn profile after searching, return null
-- Do NOT invent or guess URLs
-- Return ONLY valid JSON, no markdown or explanation`
+RULES:
+- Return the LinkedIn URL if you find a profile that likely belongs to this person
+- Use your judgment to determine the best match
+- Return null only if you truly cannot find any matching profile
+- Respond in JSON format only`
 
 export function buildUserPrompt(context: PromptContext): string {
-  const { name, institution, graduationYear, researchField, dissertationTitle } = context
+  const { name, institution, graduationYear, researchField, currentCompany, currentCity, currentState } = context
 
-  return `Find the LinkedIn profile and professional information for this Brazilian academic:
+  const location = [currentCity, currentState].filter(Boolean).join(', ')
 
-PERSON:
-- Name: "${name}"
-- Institution: ${institution || 'Unknown'}
-- Graduation: ${graduationYear || 'Unknown'}
-- Field: ${researchField || 'Unknown'}
-${dissertationTitle ? `- Dissertation: "${dissertationTitle}"` : ''}
+  return `Find the LinkedIn profile for this Brazilian academic:
 
-SEARCH NOW:
-1. "${name}" site:linkedin.com/in ${institution || ''} Brasil
-2. "${name}" site:lattes.cnpq.br
-3. "${name}" ${institution || ''} currículo
+NAME: ${name}
+${institution ? `INSTITUTION: ${institution}` : ''}
+${graduationYear ? `GRADUATION YEAR: ${graduationYear}` : ''}
+${researchField ? `FIELD: ${researchField}` : ''}
+${currentCompany ? `CURRENT COMPANY: ${currentCompany}` : ''}
+${location ? `LOCATION: ${location}` : ''}
 
-EXTRACT:
-- LinkedIn profile URL (your main goal!)
-- Current job title and company
-- Lattes CV URL if found
-- Location in Brazil
+Search for this person's LinkedIn profile. Use your best judgment to find the profile that most likely belongs to them, even if not all details match exactly.
 
-Use the institution and field info to confirm you found the correct person.
-
-Return JSON:
-${JSON_SCHEMA}`
-}
-
-const JSON_SCHEMA = `{
+Return this JSON:
+{
   "employment": {
-    "jobTitle": string | null (em português, ex: "Professor Associado", "Pesquisador Sênior"),
-    "company": string | null (nome da empresa ou instituição),
+    "jobTitle": string | null,
+    "company": string | null,
     "sector": "ACADEMIA" | "GOVERNMENT" | "PRIVATE" | "NGO" | null,
-    "city": string | null (cidade atual),
-    "state": string | null (sigla do estado: "MS", "SP", "RJ", etc),
+    "city": string | null,
+    "state": string | null,
     "confidence": "high" | "medium" | "low",
-    "context": string | null (breve descrição do cargo e responsabilidades)
-  },
-  "professional": {
-    "recentPublications": string[] (até 5 publicações recentes com ano),
-    "researchProjects": string[] (projetos de pesquisa ativos),
-    "conferences": string[] (conferências recentes),
-    "awards": string[] (prêmios e reconhecimentos)
+    "source": string
   },
   "social": {
-    "linkedinUrl": string | null (URL do perfil LinkedIn que você ENCONTROU na busca),
-    "twitterHandle": string | null (URL completa ou @handle),
-    "lattesUrl": string | null (URL do Lattes que você ENCONTROU, formato: http://lattes.cnpq.br/[16 dígitos]),
-    "googleScholarUrl": string | null (URL do perfil Google Scholar se encontrado),
-    "researchGateUrl": string | null (URL do perfil ResearchGate se encontrado),
-    "personalWebsite": string | null (site pessoal ou institucional),
-    "email": string | null (apenas emails públicos)
+    "linkedinUrl": string | null,
+    "lattesUrl": string | null,
+    "googleScholarUrl": string | null,
+    "email": string | null
+  },
+  "professional": {
+    "summary": string | null,
+    "expertise": string[]
   },
   "findings": {
-    "summary": string (2-3 frases resumindo o perfil profissional atual da pessoa),
-    "confidence": "high" | "medium" | "low" (confiança de que encontrou a pessoa correta),
-    "matchReason": string (explique por que você tem certeza que é a pessoa certa)
+    "summary": string,
+    "confidence": "high" | "medium" | "low",
+    "matchReason": string
   },
   "sources": [
+    { "url": string, "title": string, "context": string }
+  ]
+}`
+}
+
+/**
+ * LinkedIn Profile Extraction Prompt
+ *
+ * Used as a chained call after finding a LinkedIn URL to extract
+ * detailed career and education timeline data.
+ */
+export const LINKEDIN_EXTRACTION_SYSTEM_PROMPT = `You are an expert at extracting structured career data from LinkedIn profiles.
+
+YOUR MISSION: Extract detailed job history, education, and career timeline from the LinkedIn profile.
+
+RULES:
+- Extract ALL job positions with dates, titles, companies
+- Extract ALL education entries with degrees, institutions, and dates
+- Extract skills and expertise areas
+- Return null for fields you cannot find
+- Respond in JSON format only`
+
+export function buildLinkedInExtractionPrompt(linkedinUrl: string, name: string): string {
+  return `Extract detailed career information from this LinkedIn profile:
+
+LINKEDIN URL: ${linkedinUrl}
+PERSON NAME: ${name}
+
+Open this LinkedIn profile and extract all career and education data.
+
+Return this JSON:
+{
+  "currentPosition": {
+    "jobTitle": string | null,
+    "company": string | null,
+    "location": string | null,
+    "startDate": string | null
+  },
+  "jobHistory": [
     {
-      "url": string (URL real que você visitou),
-      "title": string (título da página),
-      "context": string (quais informações você extraiu desta fonte)
+      "jobTitle": string,
+      "company": string,
+      "startDate": string,
+      "endDate": string | null,
+      "location": string | null,
+      "isCurrent": boolean
     }
+  ],
+  "education": [
+    {
+      "degree": string,
+      "fieldOfStudy": string | null,
+      "institution": string,
+      "startYear": number | null,
+      "endYear": number | null
+    }
+  ],
+  "skills": string[],
+  "headline": string | null,
+  "about": string | null
+}`
+}
+
+/**
+ * Academic Discovery Prompt
+ *
+ * Used for web-first academic discovery to find comprehensive information
+ * about Brazilian academics/researchers from multiple sources.
+ */
+export const ACADEMIC_DISCOVERY_SYSTEM_PROMPT = `You are an expert at finding information about Brazilian academics and researchers.
+
+YOUR MISSION: Search the web to find detailed information about the specified academic/researcher.
+
+When searching:
+- Search for the person by their full name
+- Look for academic profiles (Lattes, ResearchGate, Google Scholar, ORCID)
+- Look for institutional pages (university websites)
+- Look for LinkedIn profiles
+- Search for their published work (dissertations, theses, papers)
+
+EXTRACT AND RETURN:
+1. Full name (as found in official sources)
+2. Current or most recent institution
+3. Academic degree (Mestrado/Doutorado/Pós-Doutorado)
+4. Graduation year (if available)
+5. Research field/area of expertise
+6. Current job title and employer
+7. Location (city, state)
+8. LinkedIn URL (if found)
+9. Lattes CV URL (if found)
+10. Email (if publicly available)
+11. Most notable dissertation/thesis title
+12. Brief professional summary
+
+RULES:
+- Search thoroughly using multiple queries if needed
+- Prioritize official academic sources (Lattes, university pages)
+- Only return information you can verify from web sources
+- If information is uncertain, mark confidence as "low"
+- Respond in JSON format only`
+
+export function buildAcademicDiscoveryPrompt(name: string, additionalContext?: string): string {
+  let prompt = `Search the web and find information about this Brazilian academic/researcher:
+
+NAME: ${name}`
+
+  if (additionalContext) {
+    prompt += `
+
+ADDITIONAL CONTEXT: ${additionalContext}`
+  }
+
+  prompt += `
+
+Search thoroughly and return a JSON object with this structure:
+{
+  "found": boolean,
+  "academic": {
+    "name": string,
+    "institution": string | null,
+    "degreeLevel": "MASTERS" | "PHD" | "POSTDOC" | null,
+    "graduationYear": number | null,
+    "researchField": string | null,
+    "currentJobTitle": string | null,
+    "currentCompany": string | null,
+    "currentCity": string | null,
+    "currentState": string | null,
+    "linkedinUrl": string | null,
+    "lattesUrl": string | null,
+    "email": string | null
+  },
+  "dissertation": {
+    "title": string | null,
+    "defenseYear": number | null,
+    "institution": string | null,
+    "abstract": string | null,
+    "advisorName": string | null
+  } | null,
+  "professional": {
+    "summary": string | null,
+    "expertise": string[]
+  },
+  "confidence": "high" | "medium" | "low",
+  "sources": [
+    { "url": string, "title": string, "relevance": string }
   ]
 }
 
-LEMBRETE FINAL: Busque ativamente o perfil LinkedIn da pessoa. Se encontrar, inclua a URL. Se não encontrar após a busca, retorne null. NÃO invente URLs.`
+If you cannot find any reliable information about this person, return:
+{ "found": false, "reason": "explanation" }`
+
+  return prompt
+}
