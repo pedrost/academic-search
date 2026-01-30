@@ -45,38 +45,38 @@ export function OverviewTab({ academic }: Props) {
   const hasEnrichment = !!academic.grokEnrichedAt
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
       {/* Education Card */}
-      <Card>
-        <CardBody className="gap-4">
-          <div className="flex items-center gap-2 text-primary-600">
+      <Card className="shadow-sm border border-default-100">
+        <CardBody className="gap-5 p-5">
+          <div className="flex items-center gap-3 text-primary-600">
             <GraduationCap className="w-5 h-5" />
-            <h3 className="font-semibold">Formação</h3>
+            <h3 className="font-semibold text-base">Formação</h3>
           </div>
-          <dl className="space-y-3 text-sm">
+          <dl className="space-y-4 text-sm">
             {academic.degreeLevel && (
               <div>
-                <dt className="text-default-500">Nível</dt>
+                <dt className="text-default-500 mb-1">Nível</dt>
                 <dd className="font-medium">{DEGREE_LEVEL_LABELS[academic.degreeLevel]}</dd>
               </div>
             )}
             {academic.institution && (
               <div>
-                <dt className="text-default-500">Instituição</dt>
+                <dt className="text-default-500 mb-1">Instituição</dt>
                 <dd className="font-medium">{academic.institution}</dd>
               </div>
             )}
             {academic.graduationYear && (
               <div>
-                <dt className="text-default-500">Ano de Conclusão</dt>
+                <dt className="text-default-500 mb-1">Ano de Conclusão</dt>
                 <dd className="font-medium">{academic.graduationYear}</dd>
               </div>
             )}
             {academic.researchField && (
               <div>
-                <dt className="text-default-500">Área de Pesquisa</dt>
+                <dt className="text-default-500 mb-1">Área de Pesquisa</dt>
                 <dd>
-                  <Chip size="sm" variant="flat" color="primary">
+                  <Chip variant="flat" color="primary" classNames={{ base: 'px-3 py-1', content: 'text-sm' }}>
                     {academic.researchField}
                   </Chip>
                 </dd>
@@ -87,44 +87,44 @@ export function OverviewTab({ academic }: Props) {
       </Card>
 
       {/* Employment Card */}
-      <Card>
-        <CardBody className="gap-4">
+      <Card className="shadow-sm border border-default-100">
+        <CardBody className="gap-5 p-5">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-success-600">
+            <div className="flex items-center gap-3 text-success-600">
               <Building2 className="w-5 h-5" />
-              <h3 className="font-semibold">Situação Atual</h3>
+              <h3 className="font-semibold text-base">Situação Atual</h3>
             </div>
             {hasLinkedIn && (
               <Tooltip content="Dados do LinkedIn">
                 <Chip
-                  size="sm"
                   variant="flat"
                   color="primary"
-                  startContent={<Linkedin className="w-3 h-3" />}
+                  startContent={<Linkedin className="w-3.5 h-3.5" />}
+                  classNames={{ base: 'px-3 py-1 gap-1.5', content: 'text-sm' }}
                 >
                   LinkedIn
                 </Chip>
               </Tooltip>
             )}
           </div>
-          <dl className="space-y-3 text-sm">
+          <dl className="space-y-4 text-sm">
             {academic.currentJobTitle && (
               <div>
-                <dt className="text-default-500">Cargo</dt>
+                <dt className="text-default-500 mb-1">Cargo</dt>
                 <dd className="font-medium">{academic.currentJobTitle}</dd>
               </div>
             )}
             {academic.currentCompany && (
               <div>
-                <dt className="text-default-500">Empresa/Instituição</dt>
+                <dt className="text-default-500 mb-1">Empresa/Instituição</dt>
                 <dd className="font-medium">{academic.currentCompany}</dd>
               </div>
             )}
             {academic.currentSector && academic.currentSector !== 'UNKNOWN' && (
               <div>
-                <dt className="text-default-500">Setor</dt>
+                <dt className="text-default-500 mb-1">Setor</dt>
                 <dd>
-                  <Chip size="sm" variant="flat" color="success">
+                  <Chip variant="flat" color="success" classNames={{ base: 'px-3 py-1', content: 'text-sm' }}>
                     {SECTOR_LABELS[academic.currentSector]}
                   </Chip>
                 </dd>
@@ -132,7 +132,7 @@ export function OverviewTab({ academic }: Props) {
             )}
             {(academic.currentCity || academic.currentState) && (
               <div>
-                <dt className="text-default-500">Localização</dt>
+                <dt className="text-default-500 mb-1">Localização</dt>
                 <dd className="font-medium">
                   {[academic.currentCity, academic.currentState].filter(Boolean).join(', ')}
                 </dd>
@@ -140,13 +140,13 @@ export function OverviewTab({ academic }: Props) {
             )}
             {grokData?.employment?.confidence && (
               <div>
-                <dt className="text-default-500">Confiança</dt>
+                <dt className="text-default-500 mb-1">Confiança</dt>
                 <dd>
                   <Chip
-                    size="sm"
                     variant="flat"
                     color={confidenceColors[grokData.employment.confidence]}
-                    startContent={<CheckCircle2 className="w-3 h-3" />}
+                    startContent={<CheckCircle2 className="w-3.5 h-3.5" />}
+                    classNames={{ base: 'px-3 py-1 gap-1.5', content: 'text-sm' }}
                   >
                     {grokData.employment.confidence === 'high' && 'Alta'}
                     {grokData.employment.confidence === 'medium' && 'Média'}
@@ -166,27 +166,27 @@ export function OverviewTab({ academic }: Props) {
 
       {/* Professional Highlights Card (from enrichment) */}
       {grokData?.professional && (
-        <Card className="md:col-span-2">
-          <CardBody className="gap-4">
+        <Card className="md:col-span-2 shadow-sm border border-default-100">
+          <CardBody className="gap-5 p-5">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-warning-600">
+              <div className="flex items-center gap-3 text-warning-600">
                 <Award className="w-5 h-5" />
-                <h3 className="font-semibold">Destaques Profissionais</h3>
+                <h3 className="font-semibold text-base">Destaques Profissionais</h3>
               </div>
               {hasEnrichment && (
-                <Chip size="sm" variant="flat" color="secondary">
+                <Chip variant="flat" color="secondary" classNames={{ base: 'px-3 py-1', content: 'text-sm' }}>
                   Enriquecido
                 </Chip>
               )}
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               {grokData.professional.recentPublications.length > 0 && (
                 <div>
-                  <div className="flex items-center gap-2 text-default-600 mb-2">
+                  <div className="flex items-center gap-2 text-default-600 mb-3">
                     <FileText className="w-4 h-4" />
                     <span className="text-sm font-medium">Publicações Recentes</span>
                   </div>
-                  <ul className="space-y-1">
+                  <ul className="space-y-2">
                     {grokData.professional.recentPublications.slice(0, 3).map((pub, i) => (
                       <li key={i} className="text-sm text-default-500 line-clamp-2">
                         • {pub}
@@ -197,11 +197,11 @@ export function OverviewTab({ academic }: Props) {
               )}
               {grokData.professional.awards.length > 0 && (
                 <div>
-                  <div className="flex items-center gap-2 text-default-600 mb-2">
+                  <div className="flex items-center gap-2 text-default-600 mb-3">
                     <Award className="w-4 h-4" />
                     <span className="text-sm font-medium">Prêmios</span>
                   </div>
-                  <ul className="space-y-1">
+                  <ul className="space-y-2">
                     {grokData.professional.awards.slice(0, 3).map((award, i) => (
                       <li key={i} className="text-sm text-default-500 line-clamp-2">
                         • {award}
@@ -212,11 +212,11 @@ export function OverviewTab({ academic }: Props) {
               )}
               {grokData.professional.researchProjects.length > 0 && (
                 <div>
-                  <div className="flex items-center gap-2 text-default-600 mb-2">
+                  <div className="flex items-center gap-2 text-default-600 mb-3">
                     <Users className="w-4 h-4" />
                     <span className="text-sm font-medium">Projetos de Pesquisa</span>
                   </div>
-                  <ul className="space-y-1">
+                  <ul className="space-y-2">
                     {grokData.professional.researchProjects.slice(0, 3).map((proj, i) => (
                       <li key={i} className="text-sm text-default-500 line-clamp-2">
                         • {proj}
@@ -227,11 +227,11 @@ export function OverviewTab({ academic }: Props) {
               )}
               {grokData.professional.conferences.length > 0 && (
                 <div>
-                  <div className="flex items-center gap-2 text-default-600 mb-2">
+                  <div className="flex items-center gap-2 text-default-600 mb-3">
                     <Globe className="w-4 h-4" />
                     <span className="text-sm font-medium">Conferências</span>
                   </div>
-                  <ul className="space-y-1">
+                  <ul className="space-y-2">
                     {grokData.professional.conferences.slice(0, 3).map((conf, i) => (
                       <li key={i} className="text-sm text-default-500 line-clamp-2">
                         • {conf}
@@ -247,51 +247,51 @@ export function OverviewTab({ academic }: Props) {
 
       {/* Enrichment Summary Card */}
       {grokData?.findings?.summary && (
-        <Card className="md:col-span-2">
-          <CardBody className="gap-3">
+        <Card className="md:col-span-2 shadow-sm border border-default-100">
+          <CardBody className="gap-4 p-5">
             <div className="flex items-center justify-between">
-              <h3 className="font-semibold text-default-700">Resumo do Perfil</h3>
+              <h3 className="font-semibold text-base text-default-700">Resumo do Perfil</h3>
               <Chip
-                size="sm"
                 variant="flat"
                 color={confidenceColors[grokData.findings.confidence]}
+                classNames={{ base: 'px-3 py-1', content: 'text-sm' }}
               >
                 Confiança {grokData.findings.confidence === 'high' ? 'Alta' : grokData.findings.confidence === 'medium' ? 'Média' : 'Baixa'}
               </Chip>
             </div>
-            <p className="text-sm text-default-600">{grokData.findings.summary}</p>
+            <p className="text-sm text-default-600 leading-relaxed">{grokData.findings.summary}</p>
           </CardBody>
         </Card>
       )}
 
       {/* Latest Dissertation Card */}
       {firstDissertation && (
-        <Card className="md:col-span-2">
-          <CardBody className="gap-4">
-            <div className="flex items-center gap-2 text-violet-600">
+        <Card className="md:col-span-2 shadow-sm border border-default-100">
+          <CardBody className="gap-5 p-5">
+            <div className="flex items-center gap-3 text-violet-600">
               <BookOpen className="w-5 h-5" />
-              <h3 className="font-semibold">Última Dissertação/Tese</h3>
+              <h3 className="font-semibold text-base">Última Dissertação/Tese</h3>
             </div>
             <div>
-              <h4 className="font-medium text-lg">{firstDissertation.title}</h4>
-              <p className="text-sm text-default-500 mt-1">
+              <h4 className="font-medium text-lg leading-snug">{firstDissertation.title}</h4>
+              <p className="text-sm text-default-500 mt-2">
                 {firstDissertation.institution} · {firstDissertation.defenseYear}
                 {firstDissertation.program && ` · ${firstDissertation.program}`}
               </p>
               {firstDissertation.advisorName && (
-                <p className="text-sm mt-2">
+                <p className="text-sm mt-3">
                   <span className="text-default-500">Orientador:</span> {firstDissertation.advisorName}
                 </p>
               )}
               {firstDissertation.abstract && (
-                <p className="text-sm text-default-600 mt-3 line-clamp-4">
+                <p className="text-sm text-default-600 mt-4 line-clamp-4 leading-relaxed">
                   {firstDissertation.abstract}
                 </p>
               )}
               {firstDissertation.keywords.length > 0 && (
-                <div className="flex flex-wrap gap-1 mt-3">
+                <div className="flex flex-wrap gap-2 mt-4">
                   {firstDissertation.keywords.map((kw, i) => (
-                    <Chip key={i} size="sm" variant="bordered">
+                    <Chip key={i} variant="bordered" classNames={{ base: 'px-2.5 py-1', content: 'text-sm' }}>
                       {kw}
                     </Chip>
                   ))}

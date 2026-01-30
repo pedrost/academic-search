@@ -52,10 +52,10 @@ export function AcademicCardV2({ academic, onEnrich, isEnriching }: Props) {
   const location = [academic.currentCity, academic.currentState].filter(Boolean).join(', ')
 
   return (
-    <Card className="w-full hover:shadow-lg transition-shadow">
-      <CardBody className="gap-3">
+    <Card className="w-full shadow-sm hover:shadow-md transition-shadow border border-default-100">
+      <CardBody className="gap-4 p-5">
         {/* Header: Avatar, Name, Status */}
-        <div className="flex gap-3 items-start">
+        <div className="flex gap-4 items-start">
           <Avatar
             name={getInitials(academic.name)}
             className="bg-gradient-to-br from-primary-500 to-violet-500 text-white font-semibold"
@@ -64,22 +64,22 @@ export function AcademicCardV2({ academic, onEnrich, isEnriching }: Props) {
           <div className="flex-1 min-w-0">
             <h3 className="font-semibold text-lg truncate">{academic.name}</h3>
             {academic.currentJobTitle && (
-              <p className="text-sm text-default-500 truncate">
+              <p className="text-sm text-default-500 truncate mt-0.5">
                 {academic.currentJobTitle}
                 {academic.currentCompany && ` @ ${academic.currentCompany}`}
               </p>
             )}
             {location && (
-              <p className="text-xs text-default-400 flex items-center gap-1 mt-1">
-                <MapPin className="w-3 h-3" />
+              <p className="text-sm text-default-400 flex items-center gap-1.5 mt-1">
+                <MapPin className="w-3.5 h-3.5" />
                 {location}
               </p>
             )}
           </div>
           <Chip
-            size="sm"
             color={statusColors[academic.enrichmentStatus]}
             variant="flat"
+            classNames={{ base: 'px-3 py-1', content: 'text-sm font-medium' }}
           >
             {statusLabels[academic.enrichmentStatus]}
           </Chip>
@@ -89,30 +89,37 @@ export function AcademicCardV2({ academic, onEnrich, isEnriching }: Props) {
         <div className="flex flex-wrap gap-2">
           {academic.degreeLevel && (
             <Chip
-              size="sm"
               color={degreeColors[academic.degreeLevel]}
               variant="flat"
-              startContent={<GraduationCap className="w-3 h-3" />}
+              startContent={<GraduationCap className="w-3.5 h-3.5" />}
+              classNames={{ base: 'px-2.5 py-1 gap-1.5', content: 'text-sm' }}
             >
               {DEGREE_LEVEL_LABELS[academic.degreeLevel]}
             </Chip>
           )}
           {academic.researchField && (
-            <Chip size="sm" variant="bordered" className="text-xs">
+            <Chip
+              variant="bordered"
+              classNames={{ base: 'px-2.5 py-1', content: 'text-sm' }}
+            >
               {academic.researchField}
             </Chip>
           )}
           {academic.dissertations.length > 0 && (
             <Chip
-              size="sm"
               variant="flat"
-              startContent={<FileText className="w-3 h-3" />}
+              startContent={<FileText className="w-3.5 h-3.5" />}
+              classNames={{ base: 'px-2.5 py-1 gap-1.5', content: 'text-sm' }}
             >
               {academic.dissertations.length} pub{academic.dissertations.length > 1 ? 's' : ''}
             </Chip>
           )}
           {academic.currentSector && academic.currentSector !== 'UNKNOWN' && (
-            <Chip size="sm" variant="flat" startContent={<Building2 className="w-3 h-3" />}>
+            <Chip
+              variant="flat"
+              startContent={<Building2 className="w-3.5 h-3.5" />}
+              classNames={{ base: 'px-2.5 py-1 gap-1.5', content: 'text-sm' }}
+            >
               {sectorIcons[academic.currentSector]} {SECTOR_LABELS[academic.currentSector]}
             </Chip>
           )}
@@ -120,29 +127,29 @@ export function AcademicCardV2({ academic, onEnrich, isEnriching }: Props) {
 
         {/* Dissertation preview */}
         {firstDissertation && (
-          <p className="text-sm text-default-600 line-clamp-2 bg-default-50 p-2 rounded-lg">
+          <p className="text-sm text-default-600 line-clamp-2 bg-default-50 p-3 rounded-lg">
             &ldquo;{firstDissertation.title}&rdquo;
           </p>
         )}
       </CardBody>
 
-      <CardFooter className="justify-between gap-2 pt-0">
+      <CardFooter className="justify-between gap-3 px-5 pb-5 pt-0">
         <Link href={`/academic/${academic.id}`}>
-          <Button color="primary" variant="flat" size="sm">
+          <Button color="primary" variant="flat" className="px-4">
             Ver Perfil
           </Button>
         </Link>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           {academic.graduationYear && (
-            <span className="text-xs text-default-400">{academic.graduationYear}</span>
+            <span className="text-sm text-default-400">{academic.graduationYear}</span>
           )}
           {academic.enrichmentStatus !== 'COMPLETE' && onEnrich && (
             <Button
-              size="sm"
               variant="ghost"
               isLoading={isEnriching}
               onPress={() => onEnrich(academic.id)}
-              startContent={!isEnriching && <Sparkles className="w-3 h-3" />}
+              startContent={!isEnriching && <Sparkles className="w-4 h-4" />}
+              className="px-3"
             >
               Enriquecer
             </Button>

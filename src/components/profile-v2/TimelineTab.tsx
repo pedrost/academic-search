@@ -144,28 +144,29 @@ export function TimelineTab({ academic }: Props) {
   })
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       {/* Filters */}
-      <Card>
-        <CardBody>
+      <Card className="shadow-sm border border-default-100">
+        <CardBody className="p-5">
           <CheckboxGroup
             label="Mostrar eventos"
             orientation="horizontal"
             value={visibleTypes}
             onValueChange={setVisibleTypes}
+            classNames={{ label: 'text-sm font-medium text-default-700 mb-3' }}
           >
-            <Checkbox value="degree" size="sm">
-              <span className="flex items-center gap-1">
+            <Checkbox value="degree" classNames={{ label: 'text-sm' }}>
+              <span className="flex items-center gap-2">
                 <GraduationCap className="w-4 h-4 text-secondary-500" /> Formação
               </span>
             </Checkbox>
-            <Checkbox value="dissertation" size="sm">
-              <span className="flex items-center gap-1">
+            <Checkbox value="dissertation" classNames={{ label: 'text-sm' }}>
+              <span className="flex items-center gap-2">
                 <FileText className="w-4 h-4 text-primary-500" /> Dissertações
               </span>
             </Checkbox>
-            <Checkbox value="employment" size="sm">
-              <span className="flex items-center gap-1">
+            <Checkbox value="employment" classNames={{ label: 'text-sm' }}>
+              <span className="flex items-center gap-2">
                 <Building2 className="w-4 h-4 text-success-500" /> Emprego
               </span>
             </Checkbox>
@@ -175,7 +176,7 @@ export function TimelineTab({ academic }: Props) {
 
       {/* Timeline */}
       {events.length === 0 ? (
-        <div className="text-center py-12 text-default-500">
+        <div className="text-center py-16 text-default-500">
           Nenhum evento para exibir. Tente selecionar mais tipos de evento.
         </div>
       ) : (
@@ -184,17 +185,17 @@ export function TimelineTab({ academic }: Props) {
           <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-default-200" />
 
           {years.map((year, yearIndex) => (
-            <div key={year} className="mb-6">
+            <div key={year} className="mb-8">
               {/* Year marker */}
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-8 h-8 rounded-full bg-default-100 flex items-center justify-center z-10">
-                  <span className="text-xs font-bold text-default-600">{year}</span>
+              <div className="flex items-center gap-4 mb-5">
+                <div className="w-9 h-9 rounded-full bg-default-100 flex items-center justify-center z-10 shadow-sm">
+                  <span className="text-sm font-bold text-default-600">{year}</span>
                 </div>
                 <div className="h-px flex-1 bg-default-200" />
               </div>
 
               {/* Events for this year */}
-              <div className="space-y-3 ml-12">
+              <div className="space-y-4 ml-14">
                 {groupedEvents[year].map((event, eventIndex) => {
                   const Icon = eventIcons[event.type]
                   const color = eventColors[event.type]
@@ -206,19 +207,19 @@ export function TimelineTab({ academic }: Props) {
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: yearIndex * 0.1 + eventIndex * 0.05 }}
                     >
-                      <Card>
-                        <CardBody className="flex-row gap-3 items-start">
-                          <div className={`p-2 rounded-lg ${eventBgClasses[event.type]}`}>
+                      <Card className="shadow-sm border border-default-100">
+                        <CardBody className="flex-row gap-4 items-start p-4">
+                          <div className={`p-2.5 rounded-lg ${eventBgClasses[event.type]}`}>
                             <Icon className={`w-5 h-5 ${eventIconClasses[event.type]}`} />
                           </div>
                           <div className="flex-1 min-w-0">
-                            <h4 className="font-medium line-clamp-2">{event.title}</h4>
-                            <p className="text-sm text-default-500">{event.subtitle}</p>
+                            <h4 className="font-medium line-clamp-2 text-base">{event.title}</h4>
+                            <p className="text-sm text-default-500 mt-1">{event.subtitle}</p>
                             {event.details && (
-                              <p className="text-xs text-default-400 mt-1">{event.details}</p>
+                              <p className="text-sm text-default-400 mt-2">{event.details}</p>
                             )}
                           </div>
-                          <Chip size="sm" variant="flat" color={color}>
+                          <Chip variant="flat" color={color} classNames={{ base: 'px-3 py-1', content: 'text-sm' }}>
                             {event.type === 'degree' && 'Formação'}
                             {event.type === 'dissertation' && 'Dissertação'}
                             {event.type === 'employment' && 'Emprego'}

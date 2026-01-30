@@ -16,6 +16,7 @@ export interface PromptContext {
 export const SYSTEM_PROMPT = `You are a research assistant with web search capabilities. Search the web RIGHT NOW to find current professional information about Brazilian academics.
 Focus on finding LinkedIn profiles, Lattes CV, current employment, and recent publications.
 Include detailed context about your findings with direct links to sources.
+IMPORTANT: Return ALL text content in Portuguese (Brazilian Portuguese). Job titles, summaries, contexts, and all descriptions must be in Portuguese.
 Return ONLY valid JSON matching the schema provided. No markdown, no explanation, just pure JSON.`
 
 export function buildUserPrompt(context: PromptContext): string {
@@ -45,38 +46,38 @@ ${JSON_SCHEMA}`
 
 const JSON_SCHEMA = `{
   "employment": {
-    "jobTitle": string | null,
+    "jobTitle": string | null (em português, ex: "Professor Associado", "Pesquisador"),
     "company": string | null,
     "sector": "ACADEMIA" | "GOVERNMENT" | "PRIVATE" | "NGO" | null,
     "city": string | null,
-    "state": string | null,
+    "state": string | null (sigla do estado, ex: "MS", "SP"),
     "confidence": "high" | "medium" | "low",
-    "context": string | null (brief description of what you found about their current role)
+    "context": string | null (breve descrição em português sobre o cargo atual)
   },
   "professional": {
-    "recentPublications": string[] (include titles with year if found),
-    "researchProjects": string[] (include project names and institutions),
-    "conferences": string[] (include event names and years),
-    "awards": string[] (include award names and years)
+    "recentPublications": string[] (títulos em português com ano),
+    "researchProjects": string[] (nomes dos projetos e instituições),
+    "conferences": string[] (nomes dos eventos e anos),
+    "awards": string[] (nomes dos prêmios e anos)
   },
   "social": {
-    "linkedinUrl": string | null (full LinkedIn profile URL),
-    "twitterHandle": string | null (full Twitter/X URL or @handle),
-    "lattesUrl": string | null (full Lattes CV URL),
-    "personalWebsite": string | null (full URL),
+    "linkedinUrl": string | null (URL completa do LinkedIn),
+    "twitterHandle": string | null (URL do Twitter/X ou @handle),
+    "lattesUrl": string | null (URL completa do Lattes),
+    "personalWebsite": string | null (URL completa),
     "email": string | null
   },
   "findings": {
-    "summary": string (2-3 sentences summarizing what you found about this person),
-    "confidence": "high" | "medium" | "low" (overall confidence you found the right person)
+    "summary": string (2-3 frases em português resumindo o que encontrou sobre esta pessoa),
+    "confidence": "high" | "medium" | "low" (confiança geral de que encontrou a pessoa correta)
   },
   "sources": [
     {
-      "url": string (direct link to source),
-      "title": string (page title or source name),
-      "context": string (what information you found on this page)
+      "url": string (link direto da fonte),
+      "title": string (título da página),
+      "context": string (em português, o que foi encontrado nesta página)
     }
   ]
 }
 
-IMPORTANT: Include all URLs found. For sources array, include at least the LinkedIn, Lattes, and any other pages you visited. Context should explain what specific information came from each source.`
+IMPORTANTE: Inclua todas as URLs encontradas. Para o array sources, inclua pelo menos LinkedIn, Lattes e outras páginas visitadas. O context deve explicar em português que informações vieram de cada fonte.`

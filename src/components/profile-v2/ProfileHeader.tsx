@@ -39,33 +39,33 @@ export function ProfileHeader({ academic, onEnrich, isEnriching }: Props) {
   return (
     <div className="space-y-4">
       {/* Back button */}
-      <NextLink href="/" className="inline-flex items-center gap-1 text-sm text-default-500 hover:text-default-700 transition-colors">
+      <NextLink href="/" className="inline-flex items-center gap-2 text-sm text-default-600 hover:text-default-800 transition-colors font-medium">
         <ArrowLeft className="w-4 h-4" />
         Voltar à busca
       </NextLink>
 
       {/* Main header card */}
-      <div className="bg-gradient-to-r from-primary-500 to-violet-500 rounded-2xl p-6 text-white">
+      <div className="bg-gradient-to-r from-primary-500 to-violet-500 rounded-2xl p-6 md:p-8 shadow-lg">
         <div className="flex flex-col md:flex-row gap-6 items-start">
           {/* Avatar */}
           <Avatar
             name={getInitials(academic.name)}
-            className="w-24 h-24 text-2xl bg-white/20 text-white font-bold"
+            className="w-24 h-24 text-2xl bg-white/25 text-white font-bold shrink-0"
           />
 
           {/* Info */}
-          <div className="flex-1">
-            <div className="flex items-start justify-between gap-4">
+          <div className="flex-1 min-w-0">
+            <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
               <div>
-                <h1 className="text-2xl md:text-3xl font-bold">{academic.name}</h1>
+                <h1 className="text-2xl md:text-3xl font-bold text-white">{academic.name}</h1>
                 {academic.currentJobTitle && (
-                  <p className="text-white/90 mt-1">
+                  <p className="text-white/90 text-lg mt-2">
                     {academic.currentJobTitle}
                     {academic.currentCompany && ` @ ${academic.currentCompany}`}
                   </p>
                 )}
                 {location && (
-                  <p className="text-white/70 text-sm mt-1">
+                  <p className="text-white/80 text-sm mt-2">
                     {location}
                     {academic.currentSector && academic.currentSector !== 'UNKNOWN' && (
                       <> · {SECTOR_LABELS[academic.currentSector]}</>
@@ -73,23 +73,25 @@ export function ProfileHeader({ academic, onEnrich, isEnriching }: Props) {
                   </p>
                 )}
               </div>
-              <Chip color={statusColors[academic.enrichmentStatus]} variant="solid" className="shrink-0">
+              <Chip
+                color={statusColors[academic.enrichmentStatus]}
+                variant="solid"
+                classNames={{ base: 'px-4 py-2 shrink-0', content: 'text-sm font-semibold' }}
+              >
                 {statusLabels[academic.enrichmentStatus]}
               </Chip>
             </div>
 
             {/* Links and actions */}
-            <div className="flex flex-wrap items-center gap-3 mt-4">
+            <div className="flex flex-wrap items-center gap-3 mt-6">
               {academic.linkedinUrl && (
                 <Link
                   href={academic.linkedinUrl}
                   isExternal
-                  className="text-white/90 hover:text-white"
                 >
                   <Button
-                    size="sm"
                     variant="flat"
-                    className="bg-white/20 text-white"
+                    className="bg-white/20 text-white hover:bg-white/30 px-4 gap-2"
                     startContent={<Linkedin className="w-4 h-4" />}
                   >
                     LinkedIn
@@ -100,12 +102,10 @@ export function ProfileHeader({ academic, onEnrich, isEnriching }: Props) {
                 <Link
                   href={academic.lattesUrl}
                   isExternal
-                  className="text-white/90 hover:text-white"
                 >
                   <Button
-                    size="sm"
                     variant="flat"
-                    className="bg-white/20 text-white"
+                    className="bg-white/20 text-white hover:bg-white/30 px-4 gap-2"
                     startContent={<GraduationCap className="w-4 h-4" />}
                   >
                     Lattes
@@ -115,12 +115,10 @@ export function ProfileHeader({ academic, onEnrich, isEnriching }: Props) {
               {academic.email && (
                 <Link
                   href={`mailto:${academic.email}`}
-                  className="text-white/90 hover:text-white"
                 >
                   <Button
-                    size="sm"
                     variant="flat"
-                    className="bg-white/20 text-white"
+                    className="bg-white/20 text-white hover:bg-white/30 px-4 gap-2"
                     startContent={<Mail className="w-4 h-4" />}
                   >
                     Email
@@ -128,9 +126,8 @@ export function ProfileHeader({ academic, onEnrich, isEnriching }: Props) {
                 </Link>
               )}
               <Button
-                size="sm"
                 variant="solid"
-                color="secondary"
+                className="bg-white text-primary-600 hover:bg-white/90 px-4 gap-2 font-medium"
                 isLoading={isEnriching}
                 onPress={onEnrich}
                 startContent={!isEnriching && <Sparkles className="w-4 h-4" />}
