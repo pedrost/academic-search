@@ -1,13 +1,13 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { SearchFiltersV2, SearchResultsV2 } from '@/components/search-v2'
 import { SearchFilters as SearchFiltersType, SearchResult } from '@/types'
 import { useDebounce } from '@/hooks/useDebounce'
 import { motion } from 'framer-motion'
 import { GraduationCap, Search, Sparkles } from 'lucide-react'
-import { Chip } from '@nextui-org/react'
 
 async function fetchAcademics(
   filters: SearchFiltersType,
@@ -42,7 +42,6 @@ async function fetchStats(): Promise<{ total: number }> {
 export default function HomePage() {
   const [filters, setFilters] = useState<SearchFiltersType>({})
   const [page, setPage] = useState(1)
-  const [enrichingIds, setEnrichingIds] = useState<string[]>([])
 
   // Debounce text search only
   const debouncedQuery = useDebounce(filters.query, 300)
@@ -66,6 +65,12 @@ export default function HomePage() {
     filters.graduationYearMax,
   ])
 
+  const router = useRouter()
+
+  const handleWebSearchComplete = (academicId: string) => {
+    router.push(`/academic/${academicId}`)
+  }
+
   const { data: stats } = useQuery({
     queryKey: ['stats'],
     queryFn: fetchStats,
@@ -78,18 +83,6 @@ export default function HomePage() {
     placeholderData: (previousData) => previousData,
   })
 
-  const handleEnrich = async (id: string) => {
-    setEnrichingIds((prev) => [...prev, id])
-    try {
-      const res = await fetch(`/api/search-academic?academicId=${id}`)
-      if (!res.ok) throw new Error('Failed to enrich')
-      // Refetch to update the card
-      // queryClient handled by the hook
-    } finally {
-      setEnrichingIds((prev) => prev.filter((i) => i !== id))
-    }
-  }
-
   return (
     <main className="min-h-screen">
       {/* Hero Section */}
@@ -98,22 +91,13 @@ export default function HomePage() {
           className="absolute inset-0 bg-grid-white/[0.05] bg-[size:60px_60px]"
           aria-hidden="true"
         />
-        <div className="container mx-auto px-4 py-12 md:py-16 relative">
+        <div className="container mx-auto px-4 pt-16 pb-24 md:pt-20 md:pb-32 relative">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6 }}
             className="max-w-3xl mx-auto text-center"
           >
-            <Chip
-              color="secondary"
-              variant="flat"
-              className="mb-4 bg-white/10 text-white"
-              startContent={<Sparkles className="w-4 h-4" />}
-            >
-              Enriquecido com IA
-            </Chip>
-
             <h1 className="text-3xl md:text-4xl lg:text-5xl font-bold mb-4 leading-tight">
               Encontre Pesquisadores
               <span className="block text-violet-200 drop-shadow-sm">
@@ -166,8 +150,8 @@ export default function HomePage() {
               isLoading={isLoading || isFetching}
               page={page}
               onPageChange={setPage}
-              onEnrich={handleEnrich}
-              enrichingIds={enrichingIds}
+              filters={effectiveFilters}
+              onWebSearchComplete={handleWebSearchComplete}
             />
           </div>
         </div>
