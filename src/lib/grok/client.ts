@@ -62,7 +62,7 @@ export async function callGrokAPI(messages: GrokMessage[]): Promise<any> {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "grok-3",
+        model: "grok-4-1-fast",
         messages,
         temperature: 0.1,
         response_format: { type: "json_object" },
