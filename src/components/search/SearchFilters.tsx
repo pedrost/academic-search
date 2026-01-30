@@ -59,22 +59,46 @@ export function SearchFilters({ filters, onFilterChange, onSearch }: Props) {
               {filters.query && (
                 <span className="inline-flex items-center gap-1 px-3 py-1 bg-primary-100 text-primary-700 rounded-full text-xs font-medium">
                   {filters.query}
-                  <X
-                    className="w-3 h-3 cursor-pointer hover:text-primary-900"
+                  <button
+                    type="button"
                     onClick={() => onFilterChange({ ...filters, query: '' })}
-                  />
+                    aria-label={`Remover filtro: ${filters.query}`}
+                    className="hover:text-primary-900 focus:outline-none focus:ring-2 focus:ring-primary-500 rounded"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
                 </span>
               )}
               {filters.degreeLevel?.map(level => (
                 <span key={level} className="inline-flex items-center gap-1 px-3 py-1 bg-accent-100 text-accent-700 rounded-full text-xs font-medium">
                   {DEGREE_LEVEL_LABELS[level as keyof typeof DEGREE_LEVEL_LABELS]}
-                  <X
-                    className="w-3 h-3 cursor-pointer"
+                  <button
+                    type="button"
                     onClick={() => {
                       const updated = filters.degreeLevel?.filter(l => l !== level) || []
                       onFilterChange({ ...filters, degreeLevel: updated })
                     }}
-                  />
+                    aria-label={`Remover filtro: ${DEGREE_LEVEL_LABELS[level as keyof typeof DEGREE_LEVEL_LABELS]}`}
+                    className="hover:text-accent-900 focus:outline-none focus:ring-2 focus:ring-accent-500 rounded"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              ))}
+              {filters.currentSector?.map(sector => (
+                <span key={sector} className="inline-flex items-center gap-1 px-3 py-1 bg-secondary-100 text-secondary-700 rounded-full text-xs font-medium">
+                  {SECTOR_LABELS[sector as keyof typeof SECTOR_LABELS]}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const updated = filters.currentSector?.filter(s => s !== sector) || []
+                      onFilterChange({ ...filters, currentSector: updated })
+                    }}
+                    aria-label={`Remover filtro: ${SECTOR_LABELS[sector as keyof typeof SECTOR_LABELS]}`}
+                    className="hover:text-secondary-900 focus:outline-none focus:ring-2 focus:ring-secondary-500 rounded"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
                 </span>
               ))}
             </div>
