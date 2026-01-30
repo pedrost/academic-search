@@ -76,16 +76,16 @@ function buildTimeline(academic: AcademicWithDissertations): TimelineEvent[] {
     })
   })
 
-  // Employment (from grokMetadata if available)
+  // Employment history (from grokMetadata if available)
   const grokData = academic.grokMetadata as Record<string, unknown> | null
-  if (grokData?.employment) {
-    const employment = grokData.employment as Array<{
+  if (grokData?.employmentHistory && Array.isArray(grokData.employmentHistory)) {
+    const employmentHistory = grokData.employmentHistory as Array<{
       year?: number
       jobTitle?: string
       company?: string
       location?: string
     }>
-    employment.forEach((job, i) => {
+    employmentHistory.forEach((job, i) => {
       events.push({
         id: 'job-' + i,
         type: 'employment',
@@ -98,7 +98,7 @@ function buildTimeline(academic: AcademicWithDissertations): TimelineEvent[] {
   }
 
   // Current employment (if not already added from grokMetadata)
-  if (academic.currentJobTitle && !grokData?.employment) {
+  if (academic.currentJobTitle && !grokData?.employmentHistory) {
     events.push({
       id: 'current-job',
       type: 'employment',

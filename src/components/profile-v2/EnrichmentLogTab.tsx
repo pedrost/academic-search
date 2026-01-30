@@ -86,9 +86,9 @@ export function EnrichmentLogTab({ academic }: Props) {
               <div>
                 <p className="text-sm text-default-500 mb-2">Fontes utilizadas</p>
                 <div className="flex flex-wrap gap-2">
-                  {(grokData.sources as string[]).map((source, i) => (
+                  {(grokData.sources as Array<{ url?: string; title?: string; context?: string }>).map((source, i) => (
                     <Chip key={i} size="sm" variant="flat">
-                      {source}
+                      {typeof source === 'string' ? source : source.title || source.url || 'Fonte'}
                     </Chip>
                   ))}
                 </div>

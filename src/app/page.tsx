@@ -116,7 +116,7 @@ export default function HomePage() {
 
             <h1 className="text-3xl md:text-4xl lg:text-5xl font-bold mb-4 leading-tight">
               Encontre Pesquisadores
-              <span className="block bg-gradient-to-r from-violet-200 to-violet-400 bg-clip-text text-transparent">
+              <span className="block text-violet-200 drop-shadow-sm">
                 em Mato Grosso do Sul
               </span>
             </h1>

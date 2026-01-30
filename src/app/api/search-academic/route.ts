@@ -108,10 +108,19 @@ export async function GET(request: NextRequest) {
     const updateData = mapGrokResponse(parsedResponse)
     const metadata = updateData.grokMetadata as unknown as GrokMetadata
 
-    // Update academic record
+    // Determine enrichment status based on what was found
+    const hasEmploymentData = !!(updateData.currentJobTitle || updateData.currentCompany)
+    const hasSocialLinks = !!(updateData.linkedinUrl || updateData.lattesUrl)
+    const enrichmentStatus = hasEmploymentData || hasSocialLinks ? 'COMPLETE' : 'PARTIAL'
+
+    // Update academic record with enrichment status
     const updatedAcademic = await prisma.academic.update({
       where: { id: academic.id },
-      data: updateData,
+      data: {
+        ...updateData,
+        enrichmentStatus,
+        lastEnrichedAt: new Date()
+      },
       include: { dissertations: true }
     })
 

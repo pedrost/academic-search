@@ -152,95 +152,107 @@ export function SearchFiltersV2({ filters, onFilterChange }: Props) {
           )}
 
           {/* Search Input */}
-          <Input
-            label="Buscar por nome ou palavra-chave"
-            placeholder="Ex: agricultura familiar, Maria Silva..."
-            labelPlacement="outside"
-            value={filters.query || ''}
-            onValueChange={(value) => onFilterChange({ ...filters, query: value })}
-            startContent={<Search className="w-4 h-4 text-default-400" />}
-            isClearable
-            onClear={() => onFilterChange({ ...filters, query: '' })}
-            classNames={{ label: 'text-sm font-medium mb-1' }}
-          />
+          <div>
+            <label className="block text-sm font-medium text-default-700 mb-2">
+              Buscar por nome ou palavra-chave
+            </label>
+            <Input
+              placeholder="Ex: agricultura familiar, Maria Silva..."
+              value={filters.query || ''}
+              onValueChange={(value) => onFilterChange({ ...filters, query: value })}
+              startContent={<Search className="w-4 h-4 text-default-400" />}
+              isClearable
+              onClear={() => onFilterChange({ ...filters, query: '' })}
+            />
+          </div>
 
           {/* Research Field */}
-          <Select
-            label="Área de Pesquisa"
-            placeholder="Todas as áreas"
-            labelPlacement="outside"
-            selectedKeys={filters.researchField ? [filters.researchField] : []}
-            onSelectionChange={(keys) => {
-              const value = Array.from(keys)[0] as string
-              onFilterChange({ ...filters, researchField: value || undefined })
-            }}
-            classNames={{ label: 'text-sm font-medium mb-1' }}
-          >
-            {RESEARCH_FIELDS.map((field) => (
-              <SelectItem key={field}>{field}</SelectItem>
-            ))}
-          </Select>
+          <div>
+            <label className="block text-sm font-medium text-default-700 mb-2">
+              Área de Pesquisa
+            </label>
+            <Select
+              placeholder="Todas as áreas"
+              selectedKeys={filters.researchField ? [filters.researchField] : []}
+              onSelectionChange={(keys) => {
+                const value = Array.from(keys)[0] as string
+                onFilterChange({ ...filters, researchField: value || undefined })
+              }}
+            >
+              {RESEARCH_FIELDS.map((field) => (
+                <SelectItem key={field}>{field}</SelectItem>
+              ))}
+            </Select>
+          </div>
 
           {/* Degree Level */}
-          <CheckboxGroup
-            label="Nível de Formação"
-            value={filters.degreeLevel || []}
-            onValueChange={(value) =>
-              onFilterChange({ ...filters, degreeLevel: value as string[] })
-            }
-            classNames={{ label: 'text-sm font-medium text-default-700 mb-2' }}
-          >
-            {Object.entries(DEGREE_LEVEL_LABELS).map(([key, label]) => (
-              <Checkbox key={key} value={key} classNames={{ label: 'text-sm' }}>
-                {label}
-              </Checkbox>
-            ))}
-          </CheckboxGroup>
-
-          {/* City */}
-          <Select
-            label="Cidade Atual"
-            placeholder="Todas as cidades"
-            labelPlacement="outside"
-            selectedKeys={filters.currentCity ? [filters.currentCity] : []}
-            onSelectionChange={(keys) => {
-              const value = Array.from(keys)[0] as string
-              onFilterChange({ ...filters, currentCity: value || undefined })
-            }}
-            classNames={{ label: 'text-sm font-medium mb-1' }}
-          >
-            {MS_CITIES.map((city) => (
-              <SelectItem key={city}>{city}</SelectItem>
-            ))}
-          </Select>
-
-          {/* Sector */}
-          <CheckboxGroup
-            label="Setor Atual"
-            value={filters.currentSector || []}
-            onValueChange={(value) =>
-              onFilterChange({ ...filters, currentSector: value as string[] })
-            }
-            classNames={{ label: 'text-sm font-medium text-default-700 mb-2' }}
-          >
-            {Object.entries(SECTOR_LABELS)
-              .filter(([key]) => key !== 'UNKNOWN')
-              .map(([key, label]) => (
+          <div>
+            <label className="block text-sm font-medium text-default-700 mb-2">
+              Nível de Formação
+            </label>
+            <CheckboxGroup
+              value={filters.degreeLevel || []}
+              onValueChange={(value) =>
+                onFilterChange({ ...filters, degreeLevel: value as string[] })
+              }
+            >
+              {Object.entries(DEGREE_LEVEL_LABELS).map(([key, label]) => (
                 <Checkbox key={key} value={key} classNames={{ label: 'text-sm' }}>
                   {label}
                 </Checkbox>
               ))}
-          </CheckboxGroup>
+            </CheckboxGroup>
+          </div>
+
+          {/* City */}
+          <div>
+            <label className="block text-sm font-medium text-default-700 mb-2">
+              Cidade Atual
+            </label>
+            <Select
+              placeholder="Todas as cidades"
+              selectedKeys={filters.currentCity ? [filters.currentCity] : []}
+              onSelectionChange={(keys) => {
+                const value = Array.from(keys)[0] as string
+                onFilterChange({ ...filters, currentCity: value || undefined })
+              }}
+            >
+              {MS_CITIES.map((city) => (
+                <SelectItem key={city}>{city}</SelectItem>
+              ))}
+            </Select>
+          </div>
+
+          {/* Sector */}
+          <div>
+            <label className="block text-sm font-medium text-default-700 mb-2">
+              Setor Atual
+            </label>
+            <CheckboxGroup
+              value={filters.currentSector || []}
+              onValueChange={(value) =>
+                onFilterChange({ ...filters, currentSector: value as string[] })
+              }
+            >
+              {Object.entries(SECTOR_LABELS)
+                .filter(([key]) => key !== 'UNKNOWN')
+                .map(([key, label]) => (
+                  <Checkbox key={key} value={key} classNames={{ label: 'text-sm' }}>
+                    {label}
+                  </Checkbox>
+                ))}
+            </CheckboxGroup>
+          </div>
 
           {/* Year Range */}
           <div>
-            <p className="text-sm font-medium text-default-700 mb-2">Ano de Formação</p>
-            <div className="grid grid-cols-2 gap-4">
+            <label className="block text-sm font-medium text-default-700 mb-2">
+              Ano de Formação
+            </label>
+            <div className="grid grid-cols-2 gap-3">
               <Input
                 type="number"
-                label="Mínimo"
-                labelPlacement="outside"
-                placeholder="2010"
+                placeholder="Mín"
                 value={filters.graduationYearMin?.toString() || ''}
                 onValueChange={(value) =>
                   onFilterChange({
@@ -248,13 +260,11 @@ export function SearchFiltersV2({ filters, onFilterChange }: Props) {
                     graduationYearMin: value ? parseInt(value) : undefined,
                   })
                 }
-                classNames={{ label: 'text-xs' }}
+                size="sm"
               />
               <Input
                 type="number"
-                label="Máximo"
-                labelPlacement="outside"
-                placeholder="2024"
+                placeholder="Máx"
                 value={filters.graduationYearMax?.toString() || ''}
                 onValueChange={(value) =>
                   onFilterChange({
@@ -262,7 +272,7 @@ export function SearchFiltersV2({ filters, onFilterChange }: Props) {
                     graduationYearMax: value ? parseInt(value) : undefined,
                   })
                 }
-                classNames={{ label: 'text-xs' }}
+                size="sm"
               />
             </div>
           </div>

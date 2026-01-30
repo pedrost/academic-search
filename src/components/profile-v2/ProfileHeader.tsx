@@ -74,9 +74,15 @@ export function ProfileHeader({ academic, onEnrich, isEnriching }: Props) {
                 )}
               </div>
               <Chip
-                color={statusColors[academic.enrichmentStatus]}
                 variant="solid"
-                classNames={{ base: 'px-4 py-2 shrink-0', content: 'text-sm font-semibold' }}
+                classNames={{
+                  base: `px-4 py-2 shrink-0 ${
+                    academic.enrichmentStatus === 'COMPLETE' ? 'bg-success-500' :
+                    academic.enrichmentStatus === 'PARTIAL' ? 'bg-warning-500' :
+                    'bg-white/20'
+                  }`,
+                  content: 'text-sm font-semibold text-white'
+                }}
               >
                 {statusLabels[academic.enrichmentStatus]}
               </Chip>
