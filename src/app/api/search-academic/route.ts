@@ -65,10 +65,18 @@ export async function GET(request: NextRequest) {
     })
 
     // Call Grok API
-    const grokResponse = await callGrokAPI([
-      { role: 'system', content: SYSTEM_PROMPT },
-      { role: 'user', content: userPrompt }
-    ])
+    console.log('[Search Academic] Calling Grok API for:', academic.name)
+    let grokResponse
+    try {
+      grokResponse = await callGrokAPI([
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user', content: userPrompt }
+      ])
+      console.log('[Search Academic] Grok API call successful')
+    } catch (apiError) {
+      console.error('[Search Academic] Grok API call failed:', apiError)
+      throw apiError
+    }
 
     // Parse and validate response
     const parsedResponse = parseGrokResponse(grokResponse)
@@ -121,12 +129,22 @@ export async function GET(request: NextRequest) {
     })
 
   } catch (error) {
-    console.error('Academic search error:', error)
+    console.error('[Search Academic] Error:', error)
+
+    // Better error formatting
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    const errorStack = error instanceof Error ? error.stack : undefined
+
+    console.error('[Search Academic] Error details:', {
+      message: errorMessage,
+      stack: errorStack
+    })
 
     return NextResponse.json(
       {
         error: 'Failed to enrich academic profile',
-        details: error instanceof Error ? error.message : 'Unknown error'
+        details: errorMessage,
+        timestamp: new Date().toISOString()
       },
       { status: 500 }
     )

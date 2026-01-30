@@ -71,6 +71,8 @@ model Academic {
   lattesUrl        String?          @map("lattes_url")
   enrichmentStatus EnrichmentStatus @default(PENDING) @map("enrichment_status")
   lastEnrichedAt   DateTime?        @map("last_enriched_at")
+  grokMetadata     Json?            @map("grok_metadata")
+  grokEnrichedAt   DateTime?        @map("grok_enriched_at")
   createdAt        DateTime         @default(now()) @map("created_at")
   updatedAt        DateTime         @updatedAt @map("updated_at")
 
