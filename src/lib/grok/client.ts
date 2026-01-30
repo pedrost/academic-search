@@ -66,9 +66,21 @@ export async function callGrokAPI(messages: GrokMessage[]): Promise<any> {
         messages,
         temperature: 0.1,
         response_format: { type: "json_object" },
-        search: {
-          max_results: 10
-        },
+        // Agent Tools API - enables web search and X search
+        tools: [
+          {
+            type: "web_search",
+            web_search: {
+              max_results: 10
+            }
+          },
+          {
+            type: "x_search",
+            x_search: {
+              max_results: 5
+            }
+          }
+        ],
         stream: false
       }),
     });
