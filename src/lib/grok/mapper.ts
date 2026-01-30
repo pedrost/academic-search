@@ -6,6 +6,7 @@
  */
 
 import { Sector, Prisma } from '@prisma/client'
+import { AcademicData, DissertationData } from '@/lib/academic-upsert'
 
 export interface GrokSource {
   url: string
@@ -13,29 +14,57 @@ export interface GrokSource {
   context: string
 }
 
+export interface LinkedInJobHistory {
+  jobTitle: string
+  company: string
+  startDate: string
+  endDate: string | null
+  location: string | null
+  isCurrent: boolean
+}
+
+export interface LinkedInEducation {
+  degree: string
+  fieldOfStudy: string | null
+  institution: string
+  startYear: number | null
+  endYear: number | null
+}
+
+export interface LinkedInProfileData {
+  currentPosition?: {
+    jobTitle: string | null
+    company: string | null
+    location: string | null
+    startDate: string | null
+  }
+  jobHistory?: LinkedInJobHistory[]
+  education?: LinkedInEducation[]
+  skills?: string[]
+  headline?: string | null
+  about?: string | null
+}
+
 export interface GrokMetadata {
   sources: GrokSource[]
   employment?: {
     confidence: 'high' | 'medium' | 'low'
     context: string | null
+    source?: string
   }
   social?: {
-    twitterHandle?: string | null
-    personalWebsite?: string | null
     googleScholarUrl?: string | null
-    researchGateUrl?: string | null
   }
   professional?: {
-    recentPublications: string[]
-    researchProjects: string[]
-    conferences: string[]
-    awards: string[]
+    summary?: string | null
+    expertise?: string[]
   }
   findings?: {
     summary: string
     confidence: 'high' | 'medium' | 'low'
     matchReason?: string
   }
+  linkedInProfile?: LinkedInProfileData
 }
 
 export interface GrokResponse {
@@ -47,20 +76,16 @@ export interface GrokResponse {
     state: string | null
     confidence: 'high' | 'medium' | 'low'
     context?: string | null
+    source?: string
   }
-  professional: {
-    recentPublications: string[]
-    researchProjects: string[]
-    conferences: string[]
-    awards: string[]
+  professional?: {
+    summary?: string | null
+    expertise?: string[]
   }
   social: {
     linkedinUrl: string | null
-    twitterHandle: string | null
     lattesUrl: string | null
     googleScholarUrl?: string | null
-    researchGateUrl?: string | null
-    personalWebsite: string | null
     email: string | null
   }
   findings: {
@@ -71,10 +96,42 @@ export interface GrokResponse {
   sources: GrokSource[]
 }
 
+export interface AcademicDiscoveryResponse {
+  found: boolean
+  reason?: string
+  academic?: {
+    name: string
+    institution: string | null
+    degreeLevel: 'MASTERS' | 'PHD' | 'POSTDOC' | null
+    graduationYear: number | null
+    researchField: string | null
+    currentJobTitle: string | null
+    currentCompany: string | null
+    currentCity: string | null
+    currentState: string | null
+    linkedinUrl: string | null
+    lattesUrl: string | null
+    email: string | null
+  }
+  dissertation?: {
+    title: string | null
+    defenseYear: number | null
+    institution: string | null
+    abstract: string | null
+    advisorName: string | null
+  } | null
+  professional?: {
+    summary: string | null
+    expertise: string[]
+  }
+  confidence: 'high' | 'medium' | 'low'
+  sources: Array<{ url: string; title: string; relevance: string }>
+}
+
 /**
  * Validate URL format for known platforms
  */
-function isValidUrl(url: string | null | undefined, platform?: 'linkedin' | 'lattes' | 'scholar' | 'researchgate'): boolean {
+function isValidUrl(url: string | null | undefined, platform?: 'linkedin' | 'lattes' | 'scholar' | 'researchgate' | 'orcid'): boolean {
   if (!url) return false
 
   try {
@@ -89,6 +146,8 @@ function isValidUrl(url: string | null | undefined, platform?: 'linkedin' | 'lat
         return parsed.hostname.includes('scholar.google')
       case 'researchgate':
         return parsed.hostname.includes('researchgate.net')
+      case 'orcid':
+        return parsed.hostname.includes('orcid.org')
       default:
         return true
     }
@@ -174,41 +233,24 @@ export function mapGrokResponse(response: GrokResponse): MappedAcademicUpdate {
       update.email = response.social.email
     }
 
-    // Store overflow social fields in metadata (with validation)
-    const socialMetadata: GrokMetadata['social'] = {}
-
-    if (response.social.twitterHandle) {
-      socialMetadata.twitterHandle = response.social.twitterHandle
-    }
-    if (response.social.personalWebsite && isValidUrl(response.social.personalWebsite)) {
-      socialMetadata.personalWebsite = response.social.personalWebsite
-    }
+    // Store Google Scholar URL in metadata (no direct column)
     if (isValidUrl(response.social.googleScholarUrl, 'scholar')) {
-      socialMetadata.googleScholarUrl = response.social.googleScholarUrl
-    }
-    if (isValidUrl(response.social.researchGateUrl, 'researchgate')) {
-      socialMetadata.researchGateUrl = response.social.researchGateUrl
-    }
-
-    if (Object.keys(socialMetadata).length > 0) {
-      metadata.social = socialMetadata
+      metadata.social = {
+        googleScholarUrl: response.social.googleScholarUrl
+      }
     }
   }
 
   // Store professional data in metadata (no direct columns for these)
   if (response.professional) {
     const hasAnyProfessional =
-      response.professional.recentPublications?.length > 0 ||
-      response.professional.researchProjects?.length > 0 ||
-      response.professional.conferences?.length > 0 ||
-      response.professional.awards?.length > 0
+      response.professional.summary ||
+      response.professional.expertise?.length
 
     if (hasAnyProfessional) {
       metadata.professional = {
-        recentPublications: response.professional.recentPublications || [],
-        researchProjects: response.professional.researchProjects || [],
-        conferences: response.professional.conferences || [],
-        awards: response.professional.awards || []
+        summary: response.professional.summary || undefined,
+        expertise: response.professional.expertise || []
       }
     }
   }
@@ -246,4 +288,159 @@ export function parseGrokResponse(rawResponse: any): GrokResponse | null {
     console.error('Error parsing Grok response:', error)
     return null
   }
+}
+
+/**
+ * Parse LinkedIn extraction response
+ */
+export function parseLinkedInExtractionResponse(rawResponse: any): LinkedInProfileData | null {
+  try {
+    if (!rawResponse || typeof rawResponse !== 'object') {
+      console.error('Invalid LinkedIn extraction response: not an object')
+      return null
+    }
+
+    return rawResponse as LinkedInProfileData
+  } catch (error) {
+    console.error('Error parsing LinkedIn extraction response:', error)
+    return null
+  }
+}
+
+/**
+ * Merge LinkedIn profile data into existing Grok metadata
+ */
+export function mergeLinkedInProfileData(
+  existingMetadata: GrokMetadata,
+  linkedInData: LinkedInProfileData
+): GrokMetadata {
+  return {
+    ...existingMetadata,
+    linkedInProfile: linkedInData
+  }
+}
+
+/**
+ * Extract current job info from LinkedIn profile data
+ */
+export function extractCurrentJobFromLinkedIn(linkedInData: LinkedInProfileData): {
+  currentJobTitle?: string
+  currentCompany?: string
+  currentCity?: string
+  currentState?: string
+} {
+  const result: {
+    currentJobTitle?: string
+    currentCompany?: string
+    currentCity?: string
+    currentState?: string
+  } = {}
+
+  // Try currentPosition first
+  if (linkedInData.currentPosition?.jobTitle) {
+    result.currentJobTitle = linkedInData.currentPosition.jobTitle
+  }
+  if (linkedInData.currentPosition?.company) {
+    result.currentCompany = linkedInData.currentPosition.company
+  }
+
+  // Parse location if available
+  if (linkedInData.currentPosition?.location) {
+    const locationParts = linkedInData.currentPosition.location.split(',').map(s => s.trim())
+    if (locationParts.length >= 1) {
+      result.currentCity = locationParts[0]
+    }
+    if (locationParts.length >= 2) {
+      result.currentState = locationParts[1]
+    }
+  }
+
+  // Fallback to first current job in history
+  if (!result.currentJobTitle && linkedInData.jobHistory?.length) {
+    const currentJob = linkedInData.jobHistory.find(j => j.isCurrent)
+    if (currentJob) {
+      result.currentJobTitle = currentJob.jobTitle
+      result.currentCompany = currentJob.company
+      if (currentJob.location) {
+        const locationParts = currentJob.location.split(',').map(s => s.trim())
+        if (locationParts.length >= 1) result.currentCity = locationParts[0]
+        if (locationParts.length >= 2) result.currentState = locationParts[1]
+      }
+    }
+  }
+
+  return result
+}
+
+/**
+ * Parse Grok academic discovery response
+ */
+export function parseAcademicDiscoveryResponse(rawResponse: any): AcademicDiscoveryResponse | null {
+  try {
+    let data = rawResponse
+
+    // Handle string response
+    if (typeof data === 'string') {
+      const jsonMatch = data.match(/\{[\s\S]*\}/)
+      if (!jsonMatch) return null
+      data = JSON.parse(jsonMatch[0])
+    }
+
+    // Validate required field
+    if (typeof data.found !== 'boolean') {
+      return null
+    }
+
+    return data as AcademicDiscoveryResponse
+  } catch (error) {
+    console.error('[Grok] Failed to parse academic discovery response:', error)
+    return null
+  }
+}
+
+/**
+ * Map academic discovery response to upsert data format
+ */
+export function mapDiscoveryToUpsertData(
+  discovery: AcademicDiscoveryResponse
+): { academicData: AcademicData; dissertationData: DissertationData | null } | null {
+  if (!discovery.found || !discovery.academic) {
+    return null
+  }
+
+  const { academic, dissertation } = discovery
+
+  // Build academic data - require at minimum name and institution
+  if (!academic.name || !academic.institution) {
+    return null
+  }
+
+  const academicData: AcademicData = {
+    name: academic.name,
+    institution: academic.institution,
+    graduationYear: academic.graduationYear || new Date().getFullYear(),
+    degreeLevel: academic.degreeLevel as any,
+    researchField: academic.researchField || undefined,
+    email: academic.email || undefined,
+    linkedinUrl: academic.linkedinUrl || undefined,
+    lattesUrl: academic.lattesUrl || undefined,
+    currentCity: academic.currentCity || undefined,
+    currentState: academic.currentState || undefined,
+    currentJobTitle: academic.currentJobTitle || undefined,
+    currentCompany: academic.currentCompany || undefined,
+  }
+
+  // Build dissertation data if available
+  let dissertationData: DissertationData | null = null
+  if (dissertation?.title && dissertation?.institution) {
+    dissertationData = {
+      title: dissertation.title,
+      defenseYear: dissertation.defenseYear || academicData.graduationYear,
+      institution: dissertation.institution,
+      abstract: dissertation.abstract || undefined,
+      advisorName: dissertation.advisorName || undefined,
+    }
+  }
+
+  return { academicData, dissertationData }
 }
