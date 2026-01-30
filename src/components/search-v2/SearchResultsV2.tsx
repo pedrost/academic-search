@@ -5,6 +5,7 @@ import { Grid3X3, List, SortAsc, Globe } from 'lucide-react'
 import { useState } from 'react'
 import { AcademicCardV2 } from './AcademicCardV2'
 import { SkeletonCard } from './SkeletonCard'
+import { WebDiscoveryProgress } from './WebDiscoveryProgress'
 import { SearchResult, SearchFilters } from '@/types'
 
 type Props = {
@@ -184,6 +185,12 @@ export function SearchResultsV2({
           )}
         </>
       )}
+
+      {/* Web Discovery Progress Modal */}
+      <WebDiscoveryProgress
+        isOpen={isSearchingWeb}
+        searchName={filters?.query || ''}
+      />
     </div>
   )
 }
