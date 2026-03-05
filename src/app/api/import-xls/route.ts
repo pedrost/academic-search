@@ -124,7 +124,7 @@ export async function POST(request: NextRequest) {
               const response = await callGrokAPI([
                 { role: 'system', content: XLS_EXTRACTION_SYSTEM_PROMPT },
                 { role: 'user', content: buildXlsExtractionPrompt(chunks[i], i, chunks.length) },
-              ])
+              ], { webSearch: false, timeoutMs: 60000 })
 
               const parsed = parseXlsExtractionResponse(response)
               if (parsed) {

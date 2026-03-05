@@ -44,17 +44,24 @@ export interface GrokAPIError {
   };
 }
 
+export interface GrokAPIOptions {
+  /** Enable web search tool (default: true) */
+  webSearch?: boolean;
+  /** Model to use (default: grok-4-0709) */
+  model?: string;
+  /** Timeout in ms (default: 300000) */
+  timeoutMs?: number;
+}
+
 /**
- * Call Grok API with web search enabled via Agent Tools
- *
- * Uses grok-4-0709 model with high search context for thorough LinkedIn discovery.
- * Includes timeout and retry logic for reliability.
+ * Call Grok API with configurable options
  *
  * @param messages - Array of system and user messages
+ * @param options - API options (webSearch, model, timeout)
  * @returns Parsed JSON response from Grok
  * @throws Error if API call fails or returns invalid response
  */
-export async function callGrokAPI(messages: GrokMessage[]): Promise<any> {
+export async function callGrokAPI(messages: GrokMessage[], options?: GrokAPIOptions): Promise<any> {
   const apiKey = process.env.XAI_API_KEY;
 
   if (!apiKey) {
@@ -69,12 +76,31 @@ export async function callGrokAPI(messages: GrokMessage[]): Promise<any> {
     throw new Error("User message is required");
   }
 
+  const useWebSearch = options?.webSearch !== false;
+  const model = options?.model || "grok-4-0709";
+  const timeoutMs = options?.timeoutMs || API_TIMEOUT_MS;
+
   // Create abort controller for timeout
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    console.log('[Grok API] Sending request to grok-4-0709 with web search...');
+    console.log(`[Grok API] Sending request to ${model}${useWebSearch ? ' with web search' : ''}...`);
+
+    const body: Record<string, unknown> = {
+      model,
+      instructions: systemMessage?.content || "",
+      input: userMessage.content,
+      text: {
+        format: {
+          type: "json_object"
+        }
+      }
+    };
+
+    if (useWebSearch) {
+      body.tools = [{ type: "web_search" }];
+    }
 
     const response = await fetch(`${XAI_BASE_URL}/responses`, {
       method: "POST",
@@ -83,23 +109,7 @@ export async function callGrokAPI(messages: GrokMessage[]): Promise<any> {
         "Content-Type": "application/json",
       },
       signal: controller.signal,
-      body: JSON.stringify({
-        model: "grok-4-0709",
-        // System instructions
-        instructions: systemMessage?.content || "",
-        // User input
-        input: userMessage.content,
-        // Enable web search tool
-        tools: [
-          { type: "web_search" }
-        ],
-        // Request JSON output
-        text: {
-          format: {
-            type: "json_object"
-          }
-        }
-      }),
+      body: JSON.stringify(body),
     });
 
     clearTimeout(timeoutId);
