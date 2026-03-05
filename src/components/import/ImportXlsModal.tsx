@@ -44,7 +44,16 @@ export function ImportXlsModal({ isOpen, onClose, onImport }: Props) {
   }
 
   return (
-    <Modal isOpen={isOpen} onClose={handleClose} size="lg" placement="center">
+    <Modal
+      isOpen={isOpen}
+      onClose={handleClose}
+      size="lg"
+      placement="center"
+      classNames={{
+        backdrop: 'bg-black/60 backdrop-blur-sm',
+        base: 'bg-white shadow-2xl',
+      }}
+    >
       <ModalContent>
         <ModalHeader className="flex flex-col gap-1">
           <h3 className="text-lg font-bold">Importar Planilha</h3>
