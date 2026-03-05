@@ -81,6 +81,11 @@ model Academic {
 
   @@index([name, institution, graduationYear])
   @@index([enrichmentStatus, linkedinUrl])
+  @@index([currentState])
+  @@index([currentCity])
+  @@index([researchField])
+  @@index([degreeLevel])
+  @@index([currentSector])
   @@map("academics")
 }
 

@@ -1,6 +1,9 @@
 import { prisma } from '@/lib/db'
 import { SearchFilters, SearchResult } from '@/types'
-import { Prisma } from '@prisma/client'
+import { Prisma, DegreeLevel, Sector } from '@prisma/client'
+
+const VALID_DEGREE_LEVELS = new Set(Object.values(DegreeLevel))
+const VALID_SECTORS = new Set(Object.values(Sector))
 
 export async function searchAcademics(
   filters: SearchFilters,
@@ -31,7 +34,12 @@ export async function searchAcademics(
   }
 
   if (filters.degreeLevel && filters.degreeLevel.length > 0) {
-    where.degreeLevel = { in: filters.degreeLevel as any[] }
+    const validLevels = filters.degreeLevel.filter(
+      (d): d is DegreeLevel => VALID_DEGREE_LEVELS.has(d as DegreeLevel)
+    )
+    if (validLevels.length > 0) {
+      where.degreeLevel = { in: validLevels }
+    }
   }
 
   if (filters.graduationYearMin || filters.graduationYearMax) {
@@ -53,7 +61,12 @@ export async function searchAcademics(
   }
 
   if (filters.currentSector && filters.currentSector.length > 0) {
-    where.currentSector = { in: filters.currentSector as any[] }
+    const validSectors = filters.currentSector.filter(
+      (s): s is Sector => VALID_SECTORS.has(s as Sector)
+    )
+    if (validSectors.length > 0) {
+      where.currentSector = { in: validSectors }
+    }
   }
 
   const [academics, total] = await Promise.all([

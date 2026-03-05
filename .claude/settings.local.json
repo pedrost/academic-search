@@ -18,7 +18,10 @@
       "Bash(npx tsx:*)",
       "WebSearch",
       "WebFetch(domain:docs.x.ai)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(python3:*)",
+      "Bash(tail:*)",
+      "Bash(npm install:*)"
     ]
   }
 }
