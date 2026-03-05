@@ -117,6 +117,7 @@ export async function POST(request: NextRequest) {
 
           let retries = 0
           let extracted: ExtractedAcademic[] | null = null
+          let lastError: string | null = null
 
           while (retries < 2 && !extracted) {
             try {
@@ -128,8 +129,12 @@ export async function POST(request: NextRequest) {
               const parsed = parseXlsExtractionResponse(response)
               if (parsed) {
                 extracted = parsed.academics
+              } else {
+                lastError = 'Resposta da IA inválida'
+                retries++
               }
             } catch (err) {
+              lastError = err instanceof Error ? err.message : 'Erro desconhecido'
               console.error(`[Import XLS] Chunk ${i + 1} attempt ${retries + 1} failed:`, err)
               retries++
             }
@@ -138,12 +143,19 @@ export async function POST(request: NextRequest) {
           if (extracted) {
             allExtracted.push(...extracted)
           } else {
-            console.warn(`[Import XLS] Skipped chunk ${i + 1} after 2 failed attempts`)
+            console.warn(`[Import XLS] Skipped chunk ${i + 1} after failed attempts: ${lastError}`)
+            send({
+              phase: 'extracting',
+              status: 'progress',
+              message: `Bloco ${i + 1} falhou: ${lastError}`,
+              chunk: i + 1,
+              totalChunks: chunks.length,
+            })
           }
         }
 
         if (allExtracted.length === 0) {
-          send({ phase: 'error', status: 'error', message: 'Nenhum acadêmico encontrado no arquivo.' })
+          send({ phase: 'error', status: 'error', message: `Nenhum acadêmico encontrado no arquivo. ${chunks.length} bloco(s) processado(s).` })
           controller.close()
           return
         }
