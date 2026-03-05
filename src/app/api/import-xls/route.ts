@@ -5,9 +5,9 @@ import {
   XLS_EXTRACTION_SYSTEM_PROMPT,
   buildXlsExtractionPrompt,
   parseXlsExtractionResponse,
-  ExtractedAcademic,
+  ExtractedRecord,
 } from '@/lib/grok/import-xls-prompt'
-import { upsertAcademic, upsertAcademicWithDissertation, AcademicData, DissertationData } from '@/lib/academic-upsert'
+import { upsertAcademic, upsertAcademicWithDissertation } from '@/lib/academic-upsert'
 
 const CHUNK_SIZE = 50 // rows per chunk
 
@@ -104,7 +104,7 @@ export async function POST(request: NextRequest) {
         // ========================================
         send({ phase: 'extracting', status: 'start', message: `Extraindo acadêmicos com IA...`, totalChunks: chunks.length })
 
-        const allExtracted: ExtractedAcademic[] = []
+        const allExtracted: ExtractedRecord[] = []
 
         for (let i = 0; i < chunks.length; i++) {
           send({
@@ -116,7 +116,7 @@ export async function POST(request: NextRequest) {
           })
 
           let retries = 0
-          let extracted: ExtractedAcademic[] | null = null
+          let extracted: ExtractedRecord[] | null = null
           let lastError: string | null = null
 
           while (retries < 2 && !extracted) {
@@ -175,46 +175,24 @@ export async function POST(request: NextRequest) {
         let duplicates = 0
 
         for (let i = 0; i < allExtracted.length; i++) {
-          const academic = allExtracted[i]
-
-          const academicData: AcademicData = {
-            name: academic.name,
-            institution: academic.institution || 'UNKNOWN',
-            graduationYear: academic.graduationYear || new Date().getFullYear(),
-            degreeLevel: academic.degreeLevel as any,
-            researchField: academic.researchField || academic.program || undefined,
-            email: academic.email || undefined,
-          }
+          const { academic: academicData, dissertation: dissertationData } = allExtracted[i]
+          const metadata = { source: 'CAPES' as const, scrapedAt: new Date() }
 
           try {
             let result: { id: string; created: boolean }
 
-            if (academic.dissertationTitle) {
-              const dissertationData: DissertationData = {
-                title: academic.dissertationTitle,
-                defenseYear: academic.graduationYear || new Date().getFullYear(),
-                institution: academic.institution || 'UNKNOWN',
-                abstract: academic.dissertationAbstract || undefined,
-                keywords: academic.keywords || undefined,
-              }
-
-              const r = await upsertAcademicWithDissertation(academicData, dissertationData, {
-                source: 'CAPES', // Using CAPES as source type for XLS import
-                scrapedAt: new Date(),
-              })
+            if (dissertationData) {
+              const r = await upsertAcademicWithDissertation(academicData, dissertationData, metadata)
               result = { id: r.academicId, created: r.academicCreated }
             } else {
-              const r = await upsertAcademic(academicData, {
-                source: 'CAPES',
-                scrapedAt: new Date(),
-              })
+              const r = await upsertAcademic(academicData, metadata)
               result = { id: r.id, created: r.created }
             }
 
             insertedIds.push(result.id)
             if (!result.created) duplicates++
           } catch (err) {
-            console.error(`[Import XLS] Failed to insert academic "${academic.name}":`, err)
+            console.error(`[Import XLS] Failed to insert academic "${academicData.name}":`, err)
           }
 
           if ((i + 1) % 5 === 0 || i === allExtracted.length - 1) {
@@ -255,7 +233,7 @@ export async function POST(request: NextRequest) {
               // Trigger the discover-academic endpoint internally
               const baseUrl = request.nextUrl.origin
               const res = await fetch(
-                `${baseUrl}/api/discover-academic?name=${encodeURIComponent(allExtracted[i].name)}`,
+                `${baseUrl}/api/discover-academic?name=${encodeURIComponent(allExtracted[i].academic.name)}`,
               )
 
               if (res.ok) {
@@ -271,7 +249,7 @@ export async function POST(request: NextRequest) {
                 enhancedIds.push(toEnhance[i])
               }
             } catch (err) {
-              console.error(`[Import XLS] Enhancement failed for "${allExtracted[i].name}":`, err)
+              console.error(`[Import XLS] Enhancement failed for "${allExtracted[i].academic.name}":`, err)
             }
 
             send({
