@@ -1,11 +1,13 @@
 'use client'
 
 import { Button, ButtonGroup, Pagination, Chip } from '@nextui-org/react'
-import { Grid3X3, List, SortAsc, Globe } from 'lucide-react'
-import { useState } from 'react'
+import { Grid3X3, List, SortAsc, Globe, FileSpreadsheet } from 'lucide-react'
+import { useCallback, useRef, useState } from 'react'
 import { AcademicCardV2 } from './AcademicCardV2'
 import { SkeletonCard } from './SkeletonCard'
-import { WebDiscoveryProgress } from './WebDiscoveryProgress'
+import { WebDiscoveryProgress, DiscoveryStep, DiscoveryPhase } from './WebDiscoveryProgress'
+import { ImportXlsModal } from '@/components/import/ImportXlsModal'
+import { ImportXlsProgress, ImportStep, ImportPhase } from '@/components/import/ImportXlsProgress'
 import { SearchResult, SearchFilters } from '@/types'
 
 type Props = {
@@ -19,6 +21,20 @@ type Props = {
 
 type ViewMode = 'grid' | 'list'
 
+const INITIAL_STEPS: DiscoveryStep[] = [
+  { phase: 'discovery', status: 'pending' },
+  { phase: 'saving', status: 'pending' },
+  { phase: 'enrichment', status: 'pending' },
+  { phase: 'linkedin', status: 'pending' },
+]
+
+const INITIAL_IMPORT_STEPS: ImportStep[] = [
+  { phase: 'parsing', status: 'pending' },
+  { phase: 'extracting', status: 'pending' },
+  { phase: 'inserting', status: 'pending' },
+  { phase: 'enhancing', status: 'pending' },
+]
+
 export function SearchResultsV2({
   result,
   isLoading,
@@ -30,26 +46,178 @@ export function SearchResultsV2({
   const [viewMode, setViewMode] = useState<ViewMode>('grid')
   const [isSearchingWeb, setIsSearchingWeb] = useState(false)
   const [webSearchError, setWebSearchError] = useState<string | null>(null)
+  const [discoverySteps, setDiscoverySteps] = useState<DiscoveryStep[]>(INITIAL_STEPS)
+  const [streamError, setStreamError] = useState<string | null>(null)
+  const abortRef = useRef<AbortController | null>(null)
+
+  // Import XLS state
+  const [showImportModal, setShowImportModal] = useState(false)
+  const [isImporting, setIsImporting] = useState(false)
+  const [importSteps, setImportSteps] = useState<ImportStep[]>(INITIAL_IMPORT_STEPS)
+  const [importError, setImportError] = useState<string | null>(null)
+  const [importResult, setImportResult] = useState<{
+    imported: number; enhanced: number; skipped: number; duplicates: number
+  } | null>(null)
+
+  const updateStep = useCallback((phase: DiscoveryPhase, status: DiscoveryStep['status'], message?: string) => {
+    setDiscoverySteps(prev =>
+      prev.map(s => s.phase === phase ? { ...s, status, message } : s)
+    )
+  }, [])
 
   const handleWebSearch = async () => {
     if (!filters?.query) return
 
     setIsSearchingWeb(true)
     setWebSearchError(null)
+    setStreamError(null)
+    setDiscoverySteps(INITIAL_STEPS.map(s => ({ ...s, status: 'pending', message: undefined })))
+
+    abortRef.current = new AbortController()
 
     try {
-      const res = await fetch(`/api/discover-academic?name=${encodeURIComponent(filters.query)}`)
-      const data = await res.json()
+      const res = await fetch(
+        `/api/discover-academic?name=${encodeURIComponent(filters.query)}`,
+        { signal: abortRef.current.signal }
+      )
 
-      if (data.success && data.found && data.academic) {
-        onWebSearchComplete?.(data.academic.id)
-      } else {
-        setWebSearchError(data.reason || 'Nenhum acadêmico encontrado na web')
+      if (!res.ok || !res.body) {
+        throw new Error('Failed to start discovery')
+      }
+
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+
+        // Parse SSE events from buffer
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || '' // Keep incomplete line in buffer
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+
+          try {
+            const event = JSON.parse(line.slice(6))
+
+            if (event.phase === 'done') {
+              if (event.status === 'success' && event.academic) {
+                onWebSearchComplete?.(event.academic.id)
+              } else if (event.status === 'not_found') {
+                setWebSearchError(event.reason || 'Nenhum acadêmico encontrado na web')
+              }
+              setIsSearchingWeb(false)
+              return
+            }
+
+            if (event.phase === 'error') {
+              setStreamError(event.message || 'Erro durante a descoberta')
+              setWebSearchError(event.message || 'Erro ao buscar na web. Tente novamente.')
+              setIsSearchingWeb(false)
+              return
+            }
+
+            // Phase progress events
+            const phase = event.phase as DiscoveryPhase
+            if (event.status === 'start') {
+              updateStep(phase, 'active', event.message)
+            } else if (event.status === 'complete') {
+              updateStep(phase, 'complete', event.message)
+            } else if (event.status === 'skipped') {
+              updateStep(phase, 'skipped', event.message)
+            }
+          } catch {
+            // Skip malformed lines
+          }
+        }
+      }
+
+      // Stream ended without a done event
+      setIsSearchingWeb(false)
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') return
+      setWebSearchError('Erro ao buscar na web. Tente novamente.')
+      setIsSearchingWeb(false)
+    }
+  }
+
+  const handleImport = async (file: File, enhancementCount: string) => {
+    setShowImportModal(false)
+    setIsImporting(true)
+    setImportError(null)
+    setImportResult(null)
+    setImportSteps(INITIAL_IMPORT_STEPS.map(s => ({ ...s, status: 'pending', message: undefined })))
+
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('enhancementCount', enhancementCount)
+
+    try {
+      const res = await fetch('/api/import-xls', { method: 'POST', body: formData })
+
+      if (!res.ok || !res.body) {
+        throw new Error('Falha ao iniciar importação')
+      }
+
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+
+          try {
+            const event = JSON.parse(line.slice(6))
+
+            if (event.phase === 'done') {
+              setImportResult({
+                imported: event.imported,
+                enhanced: event.enhanced,
+                skipped: event.skipped,
+                duplicates: event.duplicates,
+              })
+              return
+            }
+
+            if (event.phase === 'error') {
+              setImportError(event.message)
+              return
+            }
+
+            const phase = event.phase as ImportPhase
+            if (event.status === 'start' || event.status === 'progress') {
+              setImportSteps(prev =>
+                prev.map(s => s.phase === phase ? { ...s, status: 'active', message: event.message } : s)
+              )
+            } else if (event.status === 'complete') {
+              setImportSteps(prev =>
+                prev.map(s => s.phase === phase ? { ...s, status: 'complete', message: event.message } : s)
+              )
+            } else if (event.status === 'skipped') {
+              setImportSteps(prev =>
+                prev.map(s => s.phase === phase ? { ...s, status: 'skipped', message: event.message } : s)
+              )
+            }
+          } catch {
+            // Skip malformed lines
+          }
+        }
       }
     } catch (error) {
-      setWebSearchError('Erro ao buscar na web. Tente novamente.')
-    } finally {
-      setIsSearchingWeb(false)
+      setImportError(error instanceof Error ? error.message : 'Erro ao importar')
     }
   }
 
@@ -77,22 +245,32 @@ export function SearchResultsV2({
             </Chip>
           )}
         </div>
-        <ButtonGroup size="sm" variant="flat">
+        <div className="flex items-center gap-2">
           <Button
-            isIconOnly
-            color={viewMode === 'grid' ? 'primary' : 'default'}
-            onPress={() => setViewMode('grid')}
+            size="sm"
+            variant="flat"
+            startContent={<FileSpreadsheet className="w-4 h-4" />}
+            onPress={() => setShowImportModal(true)}
           >
-            <Grid3X3 className="w-4 h-4" />
+            Importar XLS
           </Button>
-          <Button
-            isIconOnly
-            color={viewMode === 'list' ? 'primary' : 'default'}
-            onPress={() => setViewMode('list')}
-          >
-            <List className="w-4 h-4" />
-          </Button>
-        </ButtonGroup>
+          <ButtonGroup size="sm" variant="flat">
+            <Button
+              isIconOnly
+              color={viewMode === 'grid' ? 'primary' : 'default'}
+              onPress={() => setViewMode('grid')}
+            >
+              <Grid3X3 className="w-4 h-4" />
+            </Button>
+            <Button
+              isIconOnly
+              color={viewMode === 'list' ? 'primary' : 'default'}
+              onPress={() => setViewMode('list')}
+            >
+              <List className="w-4 h-4" />
+            </Button>
+          </ButtonGroup>
+        </div>
       </div>
 
       {/* Loading State */}
@@ -138,7 +316,7 @@ export function SearchResultsV2({
                 {isSearchingWeb ? 'Buscando na web...' : 'Buscar acadêmico na web'}
               </Button>
 
-              {webSearchError && (
+              {webSearchError && !isSearchingWeb && (
                 <p className="text-sm text-danger-500">{webSearchError}</p>
               )}
 
@@ -190,6 +368,22 @@ export function SearchResultsV2({
       <WebDiscoveryProgress
         isOpen={isSearchingWeb}
         searchName={filters?.query || ''}
+        steps={discoverySteps}
+        error={streamError}
+      />
+
+      {/* Import XLS Modals */}
+      <ImportXlsModal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        onImport={handleImport}
+      />
+      <ImportXlsProgress
+        isOpen={isImporting}
+        steps={importSteps}
+        error={importError}
+        result={importResult}
+        onClose={() => setIsImporting(false)}
       />
     </div>
   )
