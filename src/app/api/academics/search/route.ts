@@ -5,6 +5,8 @@ import { SearchFilters } from '@/types'
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams
 
+  const ids = searchParams.getAll('id')
+
   const filters: SearchFilters = {
     query: searchParams.get('q') || undefined,
     researchField: searchParams.get('researchField') || undefined,
@@ -18,6 +20,7 @@ export async function GET(request: NextRequest) {
     currentState: searchParams.get('state') || undefined,
     currentCity: searchParams.get('city') || undefined,
     currentSector: searchParams.getAll('sector'),
+    ids: ids.length > 0 ? ids : undefined,
   }
 
   const page = parseInt(searchParams.get('page') || '1')

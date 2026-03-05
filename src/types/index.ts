@@ -13,6 +13,7 @@ export type SearchFilters = {
   currentState?: string
   currentCity?: string
   currentSector?: string[]
+  ids?: string[]
 }
 
 export type SearchResult = {

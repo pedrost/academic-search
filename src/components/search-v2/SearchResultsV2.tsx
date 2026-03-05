@@ -10,6 +10,14 @@ import { ImportXlsModal } from '@/components/import/ImportXlsModal'
 import { ImportXlsProgress, ImportStep, ImportPhase } from '@/components/import/ImportXlsProgress'
 import { SearchResult, SearchFilters } from '@/types'
 
+type ImportResult = {
+  academicIds: string[]
+  enhancedIds: string[]
+  imported: number
+  enhanced: number
+  duplicates: number
+}
+
 type Props = {
   result?: SearchResult
   isLoading: boolean
@@ -17,6 +25,7 @@ type Props = {
   onPageChange: (page: number) => void
   filters?: SearchFilters
   onWebSearchComplete?: (academicId: string) => void
+  onImportComplete?: (result: ImportResult) => void
 }
 
 type ViewMode = 'grid' | 'list'
@@ -42,6 +51,7 @@ export function SearchResultsV2({
   onPageChange,
   filters,
   onWebSearchComplete,
+  onImportComplete,
 }: Props) {
   const [viewMode, setViewMode] = useState<ViewMode>('grid')
   const [isSearchingWeb, setIsSearchingWeb] = useState(false)
@@ -187,6 +197,13 @@ export function SearchResultsV2({
                 imported: event.imported,
                 enhanced: event.enhanced,
                 skipped: event.skipped,
+                duplicates: event.duplicates,
+              })
+              onImportComplete?.({
+                academicIds: event.academicIds || [],
+                enhancedIds: event.enhancedIds || [],
+                imported: event.imported,
+                enhanced: event.enhanced,
                 duplicates: event.duplicates,
               })
               return

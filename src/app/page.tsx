@@ -25,6 +25,7 @@ async function fetchAcademics(
   if (filters.currentState) params.set('state', filters.currentState)
   if (filters.currentCity) params.set('city', filters.currentCity)
   filters.currentSector?.forEach((s) => params.append('sector', s))
+  filters.ids?.forEach((id) => params.append('id', id))
   params.set('page', page.toString())
 
   const res = await fetch(`/api/academics/search?${params}`)
@@ -63,12 +64,20 @@ export default function HomePage() {
     filters.currentCity,
     filters.graduationYearMin,
     filters.graduationYearMax,
+    filters.ids,
   ])
 
   const router = useRouter()
 
   const handleWebSearchComplete = (academicId: string) => {
     router.push(`/academic/${academicId}`)
+  }
+
+  const handleImportComplete = (result: { academicIds: string[]; enhancedIds: string[] }) => {
+    if (result.academicIds.length > 0) {
+      setFilters({ ids: result.academicIds })
+      setPage(1)
+    }
   }
 
   const { data: stats } = useQuery({
@@ -152,6 +161,7 @@ export default function HomePage() {
               onPageChange={setPage}
               filters={effectiveFilters}
               onWebSearchComplete={handleWebSearchComplete}
+              onImportComplete={handleImportComplete}
             />
           </div>
         </div>

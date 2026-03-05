@@ -12,6 +12,10 @@ export async function searchAcademics(
 ): Promise<SearchResult> {
   const where: Prisma.AcademicWhereInput = {}
 
+  if (filters.ids && filters.ids.length > 0) {
+    where.id = { in: filters.ids }
+  }
+
   if (filters.query) {
     where.OR = [
       { name: { contains: filters.query, mode: 'insensitive' } },
@@ -69,13 +73,18 @@ export async function searchAcademics(
     }
   }
 
+  // When filtering by IDs, sort by enrichment status so enhanced profiles appear first
+  const orderBy: Prisma.AcademicOrderByWithRelationInput[] = filters.ids
+    ? [{ enrichmentStatus: 'desc' }, { name: 'asc' }]
+    : [{ name: 'asc' }]
+
   const [academics, total] = await Promise.all([
     prisma.academic.findMany({
       where,
       include: { dissertations: true },
       skip: (page - 1) * pageSize,
       take: pageSize,
-      orderBy: { name: 'asc' },
+      orderBy,
     }),
     prisma.academic.count({ where }),
   ])

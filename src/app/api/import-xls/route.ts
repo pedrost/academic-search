@@ -16,7 +16,7 @@ type SSEEvent =
   | { phase: 'extracting'; status: 'start' | 'progress' | 'complete'; message?: string; chunk?: number; totalChunks?: number }
   | { phase: 'inserting'; status: 'start' | 'progress' | 'complete'; message?: string; current?: number; total?: number }
   | { phase: 'enhancing'; status: 'start' | 'progress' | 'complete' | 'skipped'; message?: string; current?: number; total?: number }
-  | { phase: 'done'; status: 'success'; imported: number; enhanced: number; skipped: number; duplicates: number }
+  | { phase: 'done'; status: 'success'; imported: number; enhanced: number; skipped: number; duplicates: number; academicIds: string[]; enhancedIds: string[] }
   | { phase: 'error'; status: 'error'; message: string }
 
 function sheetToTextChunks(sheet: XLSX.WorkSheet): string[] {
@@ -226,6 +226,7 @@ export async function POST(request: NextRequest) {
         // PHASE 4: Enhancement (optional)
         // ========================================
         let enhanced = 0
+        const enhancedIds: string[] = []
 
         if (enhanceCount > 0 && insertedIds.length > 0) {
           const toEnhance = insertedIds.slice(0, enhanceCount === Infinity ? undefined : enhanceCount)
@@ -255,6 +256,7 @@ export async function POST(request: NextRequest) {
                   }
                 }
                 enhanced++
+                enhancedIds.push(toEnhance[i])
               }
             } catch (err) {
               console.error(`[Import XLS] Enhancement failed for "${allExtracted[i].name}":`, err)
@@ -284,6 +286,8 @@ export async function POST(request: NextRequest) {
           enhanced,
           skipped: allExtracted.length - insertedIds.length,
           duplicates,
+          academicIds: insertedIds,
+          enhancedIds,
         })
       } catch (error) {
         console.error('[Import XLS] Error:', error)
