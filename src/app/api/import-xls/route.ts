@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic'
+
 import { NextRequest } from 'next/server'
 import * as XLSX from 'xlsx'
 import { callGrokAPI } from '@/lib/grok/client'

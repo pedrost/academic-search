@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic'
+
 import { NextRequest, NextResponse } from 'next/server'
 import { getAllWorkerLogs, type WorkerName } from '@/lib/worker-logger'
 import { redis } from '@/lib/queue'

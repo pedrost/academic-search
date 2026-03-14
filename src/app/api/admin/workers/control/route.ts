@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic'
+
 import { NextRequest, NextResponse } from 'next/server'
 import { setWorkerStatus, getAllWorkerStatuses } from '@/lib/worker-control'
 import { logWorkerActivity } from '@/lib/worker-logger'

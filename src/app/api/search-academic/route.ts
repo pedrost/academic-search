@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic'
+
 /**
  * Academic Search API - Grok Enrichment (SSE)
  *

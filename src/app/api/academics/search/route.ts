@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic'
+
 import { NextRequest, NextResponse } from 'next/server'
 import { searchAcademics } from '@/lib/db/academics'
 import { SearchFilters } from '@/types'

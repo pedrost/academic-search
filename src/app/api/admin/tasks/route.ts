@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic'
+
 import { NextRequest, NextResponse } from 'next/server'
 import { getTasks, getTaskStats, updateTaskStatus } from '@/lib/db/tasks'
 import { TaskStatus } from '@prisma/client'
