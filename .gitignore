@@ -52,3 +52,10 @@ next-env.d.ts
 .worktrees/
 
 /src/generated/prisma
+
+# Terraform secrets
+terraform/.env.production
+terraform/.terraform/
+terraform/terraform.tfstate
+terraform/terraform.tfstate.backup
+terraform/*.tfvars
