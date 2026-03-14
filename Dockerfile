@@ -9,6 +9,8 @@ COPY package*.json ./
 RUN npm ci
 COPY . .
 RUN npx prisma generate
+ENV DATABASE_URL="file:/tmp/build.db"
+RUN npx prisma migrate deploy
 RUN npm run build
 
 FROM node:20-alpine AS runner
