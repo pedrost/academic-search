@@ -1,0 +1,10 @@
+node_modules
+.next
+data/
+.env*
+*.md
+screenshots/
+docs/
+terraform/
+prisma/migrations/
+.git

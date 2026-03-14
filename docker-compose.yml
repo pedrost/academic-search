@@ -1,24 +1,29 @@
 services:
-  postgres:
-    image: postgres:16-alpine
-    container_name: hunter-postgres
-    environment:
-      POSTGRES_USER: hunter
-      POSTGRES_PASSWORD: hunter_dev
-      POSTGRES_DB: hunter
-    ports:
-      - "5499:5432"
+  next-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file: .env.production
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - /data:/data
+    ports:
+      - "3000:3000"
+    depends_on:
+      - redis
+
+  workers:
+    build:
+      context: .
+      dockerfile: Dockerfile.workers
+    restart: unless-stopped
+    env_file: .env.production
+    volumes:
+      - /data:/data
+    depends_on:
+      - redis
 
   redis:
     image: redis:7-alpine
-    container_name: hunter-redis
-    ports:
-      - "6380:6379"
-    volumes:
-      - redis_data:/data
-
-volumes:
-  postgres_data:
-  redis_data:
+    restart: unless-stopped
+    command: redis-server --save "" --loglevel warning
