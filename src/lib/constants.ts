@@ -45,6 +45,7 @@ export const BRAZILIAN_STATES = [
 ] as const
 
 export const DEGREE_LEVEL_LABELS = {
+  GRADUATION: 'Graduação',
   MASTERS: 'Mestrado',
   PHD: 'Doutorado',
   POSTDOC: 'Pós-Doutorado',
