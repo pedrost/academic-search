@@ -57,11 +57,28 @@ export async function GET(request: NextRequest) {
 
   const stream = new ReadableStream({
     async start(controller) {
+      let closed = false
       function send(event: SSEEvent) {
-        controller.enqueue(
-          encoder.encode(`data: ${JSON.stringify(event)}\n\n`)
-        )
+        if (closed) return
+        try {
+          controller.enqueue(
+            encoder.encode(`data: ${JSON.stringify(event)}\n\n`)
+          )
+        } catch {
+          closed = true
+        }
       }
+
+      // Keep connection alive with periodic pings during long API calls
+      const keepAlive = setInterval(() => {
+        if (closed) { clearInterval(keepAlive); return }
+        try {
+          controller.enqueue(encoder.encode(': ping\n\n'))
+        } catch {
+          closed = true
+          clearInterval(keepAlive)
+        }
+      }, 15000)
 
       try {
         // ========================================
@@ -255,7 +272,10 @@ export async function GET(request: NextRequest) {
           message: error instanceof Error ? error.message : 'Unknown error',
         })
       } finally {
-        controller.close()
+        clearInterval(keepAlive)
+        if (!closed) {
+          try { controller.close() } catch { /* already closed */ }
+        }
       }
     },
   })
