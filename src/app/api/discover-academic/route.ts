@@ -83,7 +83,6 @@ export async function GET(request: NextRequest) {
             status: 'not_found',
             reason: discoveryData?.reason || 'Could not find academic information',
           })
-          controller.close()
           return
         }
 
@@ -96,7 +95,6 @@ export async function GET(request: NextRequest) {
             status: 'not_found',
             reason: 'Insufficient data to create academic profile (missing name or institution)',
           })
-          controller.close()
           return
         }
 
@@ -152,7 +150,6 @@ export async function GET(request: NextRequest) {
 
         if (!academic) {
           send({ phase: 'error', status: 'error', message: 'Failed to retrieve created academic' })
-          controller.close()
           return
         }
 
