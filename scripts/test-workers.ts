@@ -143,7 +143,7 @@ async function verifyDatabaseData() {
       console.log(`    Title: ${diss.title.substring(0, 60)}...`)
       console.log(`    Year: ${diss.defenseYear}`)
       console.log(`    Advisor: ${diss.advisorName || 'N/A'}`)
-      console.log(`    Keywords: ${diss.keywords.length} items`)
+      console.log(`    Keywords: ${(diss.keywords as string[]).length} items`)
       console.log(`    Source URL: ${diss.sourceUrl ? 'present' : 'missing'}`)
     }
   }

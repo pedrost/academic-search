@@ -426,9 +426,9 @@ export function OverviewTab({ academic }: Props) {
                   {firstDissertation.abstract}
                 </p>
               )}
-              {firstDissertation.keywords.length > 0 && (
+              {(firstDissertation.keywords as string[]).length > 0 && (
                 <div className="flex flex-wrap gap-2 mt-4">
-                  {firstDissertation.keywords.map((kw, i) => (
+                  {(firstDissertation.keywords as string[]).map((kw, i) => (
                     <Chip key={i} variant="bordered" classNames={{ base: 'px-2.5 py-1', content: 'text-sm' }}>
                       {kw}
                     </Chip>

@@ -157,7 +157,7 @@ async function verifyDataIntegrity() {
       console.log(`\n  Dissertation: ${diss.title.substring(0, 40)}...`)
       console.log(`    Year: ${diss.defenseYear}`)
       console.log(`    Advisor: ${diss.advisorName || 'N/A'}`)
-      console.log(`    Keywords: ${diss.keywords.length} items`)
+      console.log(`    Keywords: ${(diss.keywords as string[]).length} items`)
       console.log(`    Source URL: ${diss.sourceUrl ? '✓ present' : '✗ missing'}`)
       console.log(`    Abstract: ${diss.abstract ? '✓ present' : '✗ missing'}`)
     }

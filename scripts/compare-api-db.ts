@@ -113,7 +113,7 @@ async function compare() {
 
   console.log(`\nKeywords:`)
   console.log(`  API: ${keywords.join(' | ')}`)
-  console.log(`  DB:  ${diss?.keywords?.join(' | ')}`)
+  console.log(`  DB:  ${(diss?.keywords as string[])?.join(' | ')}`)
   const keywordsMatch = JSON.stringify(keywords) === JSON.stringify(diss?.keywords)
   console.log(`  ${keywordsMatch ? '✓ MATCH' : '✗ MISMATCH'}`)
 

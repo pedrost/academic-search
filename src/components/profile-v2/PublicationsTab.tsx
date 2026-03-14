@@ -63,9 +63,9 @@ export function PublicationsTab({ academic }: Props) {
                 </p>
               )}
 
-              {diss.keywords.length > 0 && (
+              {(diss.keywords as string[]).length > 0 && (
                 <div className="flex flex-wrap gap-1">
-                  {diss.keywords.map((kw, i) => (
+                  {(diss.keywords as string[]).map((kw, i) => (
                     <Chip key={i} size="sm" variant="bordered">
                       {kw}
                     </Chip>
