@@ -53,6 +53,11 @@ next-env.d.ts
 
 /src/generated/prisma
 
+# SQLite database files
+data/*.db
+data/*.db-shm
+data/*.db-wal
+
 # Terraform secrets
 terraform/.env.production
 terraform/.terraform/
