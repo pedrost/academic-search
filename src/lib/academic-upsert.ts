@@ -17,6 +17,8 @@
 import { prisma } from '@/lib/db'
 import { DegreeLevel } from '@prisma/client'
 
+const asStringArray = (v: unknown): string[] => (Array.isArray(v) ? v as string[] : [])
+
 export interface AcademicData {
   name: string
   institution: string
@@ -223,10 +225,10 @@ export async function upsertDissertation(
 
     // Merge keywords arrays
     if (data.keywords && data.keywords.length > 0) {
-      const existingKeywords = new Set(existing.keywords)
-      const newKeywords = data.keywords.filter(k => !existingKeywords.has(k))
+      const existingKeywords = new Set(asStringArray(existing.keywords))
+      const newKeywords = data.keywords!.filter(k => !existingKeywords.has(k))
       if (newKeywords.length > 0) {
-        updates.keywords = [...existing.keywords, ...newKeywords]
+        updates.keywords = [...asStringArray(existing.keywords), ...newKeywords]
         hasUpdates = true
       }
     }
