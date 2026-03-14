@@ -144,9 +144,9 @@ Return this JSON:
  * Used for web-first academic discovery to find comprehensive information
  * about Brazilian academics/researchers from multiple sources.
  */
-export const ACADEMIC_DISCOVERY_SYSTEM_PROMPT = `You are an expert at finding information about Brazilian academics and researchers.
+export const ACADEMIC_DISCOVERY_SYSTEM_PROMPT = `You are an expert at finding information about Brazilians who studied or work in Mato Grosso do Sul.
 
-YOUR MISSION: Search the web to find detailed information about the specified academic/researcher.
+YOUR MISSION: Search the web to find detailed information about the specified person — whether they are an academic researcher, professor, graduate, undergraduate, or any professional with a university background.
 
 When searching:
 - Search for the person by their full name
@@ -154,24 +154,27 @@ When searching:
 - Look for institutional pages (university websites)
 - Look for LinkedIn profiles
 - Search for their published work (dissertations, theses, papers)
+- Look for any professional or social media presence
 
 EXTRACT AND RETURN:
 1. Full name (as found in official sources)
-2. Current or most recent institution
-3. Academic degree (Mestrado/Doutorado/Pós-Doutorado)
+2. Current or most recent institution (university, company, etc.)
+3. Highest academic degree obtained (Graduação, Mestrado, Doutorado, Pós-Doutorado)
 4. Graduation year (if available)
-5. Research field/area of expertise
+5. Field of study or area of expertise
 6. Current job title and employer
 7. Location (city, state)
 8. LinkedIn URL (if found)
 9. Lattes CV URL (if found)
 10. Email (if publicly available)
-11. Most notable dissertation/thesis title
+11. Most notable dissertation/thesis title (if any)
 12. Brief professional summary
+
+IMPORTANT: Set "found": true for ANY person you can identify with reasonable confidence — including those who only have a bachelor's degree, work as professionals outside academia, or have no research publications. Only set "found": false if you truly cannot find any information about this person at all.
 
 RULES:
 - Search thoroughly using multiple queries if needed
-- Prioritize official academic sources (Lattes, university pages)
+- Accept any credible source: LinkedIn, university pages, Lattes, company websites, news articles
 - Only return information you can verify from web sources
 - If information is uncertain, mark confidence as "low"
 - Respond in JSON format only`
@@ -195,7 +198,7 @@ Search thoroughly and return a JSON object with this structure:
   "academic": {
     "name": string,
     "institution": string | null,
-    "degreeLevel": "MASTERS" | "PHD" | "POSTDOC" | null,
+    "degreeLevel": "GRADUATION" | "MASTERS" | "PHD" | "POSTDOC" | null,
     "graduationYear": number | null,
     "researchField": string | null,
     "currentJobTitle": string | null,
@@ -223,8 +226,10 @@ Search thoroughly and return a JSON object with this structure:
   ]
 }
 
-If you cannot find any reliable information about this person, return:
-{ "found": false, "reason": "explanation" }`
+If you truly cannot find ANY reliable information about this person, return:
+{ "found": false, "reason": "explanation" }
+
+Note: Having only a bachelor's degree or working outside academia is NOT a reason to return found: false. Return found: true whenever you can identify the person.`
 
   return prompt
 }

@@ -102,7 +102,7 @@ export interface AcademicDiscoveryResponse {
   academic?: {
     name: string
     institution: string | null
-    degreeLevel: 'MASTERS' | 'PHD' | 'POSTDOC' | null
+    degreeLevel: 'GRADUATION' | 'MASTERS' | 'PHD' | 'POSTDOC' | null
     graduationYear: number | null
     researchField: string | null
     currentJobTitle: string | null
