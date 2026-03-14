@@ -15,6 +15,7 @@
 
 import { NextRequest } from 'next/server'
 import { prisma } from '@/lib/db'
+import { Prisma } from '@prisma/client'
 import { callGrokAPI } from '@/lib/grok/client'
 import {
   SYSTEM_PROMPT,
@@ -53,7 +54,8 @@ export async function GET(request: NextRequest) {
 
       try {
         // Find academic in database
-        let academic = null
+        type AcademicWithDissertations = Prisma.AcademicGetPayload<{ include: { dissertations: true } }>
+        let academic: AcademicWithDissertations | null = null
 
         if (academicId) {
           academic = await prisma.academic.findUnique({
@@ -63,7 +65,7 @@ export async function GET(request: NextRequest) {
         } else if (name) {
           academic = await prisma.academic.findFirst({
             where: {
-              name: { contains: name, mode: 'insensitive' }
+              name: { contains: name }
             },
             include: { dissertations: true }
           })

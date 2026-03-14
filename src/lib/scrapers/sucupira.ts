@@ -177,7 +177,7 @@ async function saveDissertation(data: DissertationData) {
   // Find or create academic
   let academic = await prisma.academic.findFirst({
     where: {
-      name: { equals: data.authorName, mode: 'insensitive' },
+      name: { equals: data.authorName },
     },
   })
 
@@ -197,7 +197,7 @@ async function saveDissertation(data: DissertationData) {
   const existingDiss = await prisma.dissertation.findFirst({
     where: {
       academicId: academic.id,
-      title: { equals: data.title, mode: 'insensitive' },
+      title: { equals: data.title },
     },
   })
 

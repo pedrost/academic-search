@@ -18,15 +18,12 @@ export async function searchAcademics(
 
   if (filters.query) {
     where.OR = [
-      { name: { contains: filters.query, mode: 'insensitive' } },
-      { researchField: { contains: filters.query, mode: 'insensitive' } },
+      { name: { contains: filters.query } },
+      { researchField: { contains: filters.query } },
       {
         dissertations: {
           some: {
-            OR: [
-              { title: { contains: filters.query, mode: 'insensitive' } },
-              { keywords: { has: filters.query } },
-            ],
+            title: { contains: filters.query },
           },
         },
       },
@@ -34,7 +31,7 @@ export async function searchAcademics(
   }
 
   if (filters.researchField) {
-    where.researchField = { contains: filters.researchField, mode: 'insensitive' }
+    where.researchField = { contains: filters.researchField }
   }
 
   if (filters.degreeLevel && filters.degreeLevel.length > 0) {
@@ -61,7 +58,7 @@ export async function searchAcademics(
   }
 
   if (filters.currentCity) {
-    where.currentCity = { contains: filters.currentCity, mode: 'insensitive' }
+    where.currentCity = { contains: filters.currentCity }
   }
 
   if (filters.currentSector && filters.currentSector.length > 0) {
