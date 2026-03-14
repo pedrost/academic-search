@@ -73,7 +73,7 @@ resource "aws_instance" "hunter" {
 
   root_block_device {
     volume_type = "gp3"
-    volume_size = 20
+    volume_size = 30
     encrypted   = true
   }
 
@@ -105,7 +105,9 @@ resource "null_resource" "deploy" {
   provisioner "remote-exec" {
     inline = [
       "until [ -f /var/lib/cloud/instance/boot-finished ]; do sleep 5; done",
-      "until docker info > /dev/null 2>&1; do sleep 5; done"
+      "until docker info > /dev/null 2>&1; do sleep 5; done",
+      "sudo mkdir -p /app/hunter",
+      "sudo chown -R ec2-user:ec2-user /app/hunter"
     ]
   }
 
