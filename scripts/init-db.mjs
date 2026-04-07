@@ -20,7 +20,9 @@ const statements = [
     linkedin_url TEXT,
     lattes_url TEXT,
     enrichment_status TEXT NOT NULL DEFAULT 'PENDING',
+    enrichment_tier TEXT,
     last_enriched_at DATETIME,
+    lattes_id TEXT,
     grok_metadata TEXT,
     grok_enriched_at DATETIME,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -82,6 +84,21 @@ const statements = [
 
 for (const sql of statements) {
   await client.execute(sql)
+}
+
+// Idempotent column migrations for existing databases (added 2026-04-07)
+const columnMigrations = [
+  { table: 'academics', column: 'enrichment_tier', ddl: 'ALTER TABLE academics ADD COLUMN enrichment_tier TEXT' },
+  { table: 'academics', column: 'lattes_id', ddl: 'ALTER TABLE academics ADD COLUMN lattes_id TEXT' },
+]
+
+for (const { table, column, ddl } of columnMigrations) {
+  const info = await client.execute(`PRAGMA table_info(${table})`)
+  const exists = info.rows.some(r => r.name === column)
+  if (!exists) {
+    await client.execute(ddl)
+    console.log(`Added column: ${table}.${column}`)
+  }
 }
 
 console.log('Database schema initialized successfully')

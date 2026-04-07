@@ -1,4 +1,5 @@
 import { scraperQueue, enrichmentQueue } from './index'
+import type { TieredEnrichJobData } from '@/lib/enrichment/tier-router'
 
 export type SucupiraJobData = {
   institution: string
@@ -33,5 +34,14 @@ export async function queueLinkedInEnrichment(data: LinkedInJobData) {
 export async function queueCaptchaSolved(data: CaptchaSolvedData) {
   return enrichmentQueue.add('captcha-solved', data, {
     priority: 1,
+  })
+}
+
+export async function queueTieredEnrich(data: TieredEnrichJobData) {
+  return enrichmentQueue.add('tiered-enrich', data, {
+    attempts: 2,
+    backoff: { type: 'exponential', delay: 15000 },
+    // Spread jobs to avoid hammering LinkedIn/Lattes
+    delay: 0,
   })
 }

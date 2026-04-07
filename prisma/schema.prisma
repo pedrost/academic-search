@@ -27,6 +27,12 @@ enum EnrichmentStatus {
   COMPLETE
 }
 
+enum EnrichmentTier {
+  FREE
+  API
+  AI
+}
+
 enum TaskType {
   CAPTCHA
   LINKEDIN_MATCH
@@ -71,7 +77,9 @@ model Academic {
   linkedinUrl      String?          @map("linkedin_url")
   lattesUrl        String?          @map("lattes_url")
   enrichmentStatus EnrichmentStatus @default(PENDING) @map("enrichment_status")
+  enrichmentTier   EnrichmentTier?  @map("enrichment_tier")
   lastEnrichedAt   DateTime?        @map("last_enriched_at")
+  lattesId         String?          @map("lattes_id")
   grokMetadata     Json?            @map("grok_metadata")
   grokEnrichedAt   DateTime?        @map("grok_enriched_at")
   createdAt        DateTime         @default(now()) @map("created_at")

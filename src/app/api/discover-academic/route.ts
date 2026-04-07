@@ -1,281 +1,138 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest } from 'next/server'
-import { callGrokAPI } from '@/lib/grok/client'
-import {
-  ACADEMIC_DISCOVERY_SYSTEM_PROMPT,
-  buildAcademicDiscoveryPrompt,
-  SYSTEM_PROMPT,
-  buildUserPrompt,
-  LINKEDIN_EXTRACTION_SYSTEM_PROMPT,
-  buildLinkedInExtractionPrompt,
-} from '@/lib/grok/prompts'
-import {
-  parseAcademicDiscoveryResponse,
-  mapDiscoveryToUpsertData,
-  parseGrokResponse,
-  mapGrokResponse,
-  parseLinkedInExtractionResponse,
-  mergeLinkedInProfileData,
-  extractCurrentJobFromLinkedIn,
-} from '@/lib/grok/mapper'
-import { upsertAcademicWithDissertation, upsertAcademic } from '@/lib/academic-upsert'
 import { prisma } from '@/lib/db'
+import { freeTierEnrich } from '@/lib/enrichment/free-tier'
+import { apiTierEnrich } from '@/lib/enrichment/api-tier'
+import { aiTierEnrich } from '@/lib/enrichment/ai-tier'
+import { estimateCost, type EnrichmentTier } from '@/lib/enrichment/tier-router'
+import { upsertAcademic } from '@/lib/academic-upsert'
 
-type SSEEvent = {
-  phase: 'discovery' | 'enrichment' | 'linkedin' | 'saving'
-  status: 'start' | 'complete' | 'skipped'
-  message?: string
-} | {
-  phase: 'done'
-  status: 'success'
-  academic: any
-  enrichmentSummary: any
-} | {
-  phase: 'done'
-  status: 'not_found'
-  reason: string
-} | {
-  phase: 'error'
-  status: 'error'
-  message: string
-}
+type SSEEvent =
+  | { phase: 'init'; status: 'start'; message: string }
+  | { phase: 'lattes' | 'linkedin' | 'serpapi' | 'proxycurl' | 'discovery' | 'enrichment'; status: 'start' | 'complete' | 'skipped'; message?: string }
+  | { phase: 'done'; status: 'success'; academic: any; enrichmentSummary: any }
+  | { phase: 'done'; status: 'not_found'; reason: string }
+  | { phase: 'error'; status: 'error'; message: string }
 
 export async function GET(request: NextRequest) {
-  const searchParams = request.nextUrl.searchParams
-  const name = searchParams.get('name')
-  const context = searchParams.get('context')
+  const params = request.nextUrl.searchParams
+  const id = params.get('id')
+  const name = params.get('name')
+  const tierParam = (params.get('tier') ?? 'AI').toUpperCase() as EnrichmentTier
+  const state = params.get('state')
+  const city = params.get('city')
+  const institution = params.get('institution')
 
-  if (!name) {
-    return new Response(
-      JSON.stringify({ error: 'Name parameter is required' }),
-      { status: 400, headers: { 'Content-Type': 'application/json' } }
-    )
+  if (!id && !name) {
+    return new Response(JSON.stringify({ error: 'Provide ?id or ?name' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' },
+    })
   }
 
-  const encoder = new TextEncoder()
+  const tier: EnrichmentTier = ['FREE', 'API', 'AI'].includes(tierParam) ? tierParam : 'AI'
 
+  const encoder = new TextEncoder()
   const stream = new ReadableStream({
     async start(controller) {
       let closed = false
       function send(event: SSEEvent) {
         if (closed) return
         try {
-          controller.enqueue(
-            encoder.encode(`data: ${JSON.stringify(event)}\n\n`)
-          )
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`))
         } catch {
           closed = true
         }
       }
 
-      // Keep connection alive with periodic pings during long API calls
       const keepAlive = setInterval(() => {
         if (closed) { clearInterval(keepAlive); return }
-        try {
-          controller.enqueue(encoder.encode(': ping\n\n'))
-        } catch {
-          closed = true
-          clearInterval(keepAlive)
-        }
+        try { controller.enqueue(encoder.encode(': ping\n\n')) } catch { closed = true; clearInterval(keepAlive) }
       }, 15000)
 
       try {
-        // ========================================
-        // PHASE 1: Discover academic from web
-        // ========================================
-        send({ phase: 'discovery', status: 'start', message: 'Pesquisando na web...' })
+        send({ phase: 'init', status: 'start', message: `Iniciando enriquecimento [${tier}]...` })
 
-        const discoveryResponse = await callGrokAPI([
-          { role: 'system', content: ACADEMIC_DISCOVERY_SYSTEM_PROMPT },
-          { role: 'user', content: buildAcademicDiscoveryPrompt(name, context || undefined) },
-        ])
+        // ── Resolve academic ID ────────────────────────────────────────
+        let academicId: string | null = id
 
-        const discoveryData = parseAcademicDiscoveryResponse(discoveryResponse)
-
-        if (!discoveryData || !discoveryData.found) {
-          send({ phase: 'discovery', status: 'complete' })
-          send({
-            phase: 'done',
-            status: 'not_found',
-            reason: discoveryData?.reason || 'Could not find academic information',
+        if (!academicId && name) {
+          // Try to find existing academic by name (+ context hints)
+          const existing = await prisma.academic.findFirst({
+            where: {
+              name: { contains: name },
+              ...(institution ? { institution: { contains: institution } } : {}),
+              ...(state ? { currentState: state } : {}),
+              ...(city ? { currentCity: city } : {}),
+            },
+            orderBy: { createdAt: 'desc' },
           })
-          return
+          academicId = existing?.id ?? null
         }
 
-        const upsertData = mapDiscoveryToUpsertData(discoveryData)
-
-        if (!upsertData) {
-          send({ phase: 'discovery', status: 'complete' })
-          send({
-            phase: 'done',
-            status: 'not_found',
-            reason: 'Insufficient data to create academic profile (missing name or institution)',
-          })
-          return
-        }
-
-        send({ phase: 'discovery', status: 'complete', message: `Encontrado: ${discoveryData.academic?.name}` })
-
-        // ========================================
-        // PHASE 2: Save initial profile
-        // ========================================
-        send({ phase: 'saving', status: 'start', message: 'Salvando perfil inicial...' })
-
-        let academicId: string
-
-        if (upsertData.dissertationData) {
-          const result = await upsertAcademicWithDissertation(
-            upsertData.academicData,
-            upsertData.dissertationData,
-            { source: 'LINKEDIN', scrapedAt: new Date() }
-          )
-          academicId = result.academicId
-        } else {
+        // If no existing academic and tier is AI, create a stub record
+        if (!academicId && tier === 'AI' && name) {
           const result = await upsertAcademic(
-            upsertData.academicData,
+            { name: name!, institution: institution ?? '', graduationYear: new Date().getFullYear() },
             { source: 'LINKEDIN', scrapedAt: new Date() }
           )
           academicId = result.id
         }
 
-        await prisma.academic.update({
-          where: { id: academicId },
-          data: {
-            grokMetadata: {
-              discoveryPhase: {
-                confidence: discoveryData.confidence,
-                sources: discoveryData.sources,
-                professional: discoveryData.professional,
-              },
-            },
-            grokEnrichedAt: new Date(),
-          },
-        })
-
-        send({ phase: 'saving', status: 'complete' })
-
-        // ========================================
-        // PHASE 3: Enrich with employment data
-        // ========================================
-        send({ phase: 'enrichment', status: 'start', message: 'Buscando dados profissionais...' })
-
-        const academic = await prisma.academic.findUnique({
-          where: { id: academicId },
-          include: { dissertations: true },
-        })
-
-        if (!academic) {
-          send({ phase: 'error', status: 'error', message: 'Failed to retrieve created academic' })
+        if (!academicId && tier !== 'AI') {
+          send({ phase: 'done', status: 'not_found', reason: 'Academic not found in database. Use tier=AI for cold discovery.' })
           return
         }
 
-        const enrichmentPrompt = buildUserPrompt({
-          name: academic.name,
-          institution: academic.institution,
-          graduationYear: academic.graduationYear,
-          researchField: academic.researchField,
-          dissertationTitle: academic.dissertations[0]?.title,
-          currentCompany: academic.currentCompany,
-          currentCity: academic.currentCity,
-          currentState: academic.currentState,
-        })
+        // ── Run enrichment ────────────────────────────────────────────
+        const ctx = { name: name ?? undefined, state: state ?? null, city: city ?? null, institution: institution ?? null }
+        const startMs = Date.now()
 
-        const enrichmentResponse = await callGrokAPI([
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: enrichmentPrompt },
-        ])
+        let result: { success: boolean; enrichmentStatus: string; sources: string[]; durationMs: number; academicId?: string }
 
-        const grokData = parseGrokResponse(enrichmentResponse)
-        let updateData = grokData ? mapGrokResponse(grokData) : null
-        let metadata = (updateData?.grokMetadata as any) || {}
-        metadata.discoveryPhase = discoveryData
-
-        send({ phase: 'enrichment', status: 'complete' })
-
-        // ========================================
-        // PHASE 4: Extract LinkedIn profile details
-        // ========================================
-        const linkedInUrl = updateData?.linkedinUrl || academic.linkedinUrl
-
-        if (linkedInUrl) {
-          send({ phase: 'linkedin', status: 'start', message: 'Extraindo perfil LinkedIn...' })
-
-          try {
-            const linkedInResponse = await callGrokAPI([
-              { role: 'system', content: LINKEDIN_EXTRACTION_SYSTEM_PROMPT },
-              { role: 'user', content: buildLinkedInExtractionPrompt(linkedInUrl, academic.name) },
-            ])
-
-            const linkedInData = parseLinkedInExtractionResponse(linkedInResponse)
-
-            if (linkedInData) {
-              metadata = mergeLinkedInProfileData(metadata, linkedInData)
-              const jobFromLinkedIn = extractCurrentJobFromLinkedIn(linkedInData)
-
-              if (updateData) {
-                updateData.currentJobTitle = updateData.currentJobTitle || jobFromLinkedIn.currentJobTitle
-                updateData.currentCompany = updateData.currentCompany || jobFromLinkedIn.currentCompany
-                updateData.currentCity = updateData.currentCity || jobFromLinkedIn.currentCity
-              }
-            }
-
-            send({ phase: 'linkedin', status: 'complete' })
-          } catch (linkedInError) {
-            console.error('[Discover] LinkedIn extraction failed (non-fatal):', linkedInError)
-            send({ phase: 'linkedin', status: 'complete', message: 'LinkedIn parcial' })
-          }
+        if (tier === 'FREE') {
+          send({ phase: 'lattes', status: 'start', message: 'Buscando Lattes via Google...' })
+          result = await freeTierEnrich(academicId!, ctx)
+          send({ phase: 'lattes', status: 'complete' })
+        } else if (tier === 'API') {
+          send({ phase: 'serpapi', status: 'start', message: 'Buscando LinkedIn via SerpAPI...' })
+          result = await apiTierEnrich(academicId!, ctx)
+          send({ phase: 'serpapi', status: 'complete' })
         } else {
-          send({ phase: 'linkedin', status: 'skipped', message: 'Sem LinkedIn encontrado' })
+          send({ phase: 'discovery', status: 'start', message: 'Pesquisando na web (Grok-4)...' })
+          result = await aiTierEnrich(academicId, ctx)
+          academicId = result.academicId ?? academicId
+          send({ phase: 'discovery', status: 'complete' })
         }
 
-        // ========================================
-        // Final update
-        // ========================================
-        const hasEmploymentData = !!(updateData?.currentJobTitle || updateData?.currentCompany)
-        const hasSocialLinks = !!(updateData?.linkedinUrl || updateData?.lattesUrl || academic.linkedinUrl || academic.lattesUrl)
-        const hasLinkedInProfile = !!metadata.linkedInProfile
-        const enrichmentStatus = (hasEmploymentData || hasSocialLinks) ? 'COMPLETE' : 'PARTIAL'
+        if (!result.success && result.enrichmentStatus === 'PENDING') {
+          send({ phase: 'done', status: 'not_found', reason: (result as any).error ?? 'Não foi possível encontrar dados para este acadêmico' })
+          return
+        }
 
-        const updatedAcademic = await prisma.academic.update({
-          where: { id: academicId },
-          data: {
-            ...(updateData || {}),
-            grokMetadata: metadata,
-            grokEnrichedAt: new Date(),
-            enrichmentStatus,
-            lastEnrichedAt: new Date(),
-          },
+        const finalAcademic = await prisma.academic.findUnique({
+          where: { id: academicId! },
           include: { dissertations: true },
         })
 
         send({
           phase: 'done',
           status: 'success',
-          academic: updatedAcademic,
+          academic: finalAcademic,
           enrichmentSummary: {
-            discoveryConfidence: discoveryData.confidence,
-            sourcesFound: discoveryData.sources?.length || 0,
-            jobTitle: updatedAcademic.currentJobTitle,
-            company: updatedAcademic.currentCompany,
-            sector: updatedAcademic.currentSector,
-            linkedInUrl: updatedAcademic.linkedinUrl,
-            hasLinkedInProfile,
-            enrichmentStatus,
+            tier,
+            estimatedCost: estimateCost(tier),
+            sources: result.sources,
+            enrichmentStatus: result.enrichmentStatus,
+            durationMs: result.durationMs,
           },
         })
       } catch (error) {
-        console.error('[Discover] Error:', error)
-        send({
-          phase: 'error',
-          status: 'error',
-          message: error instanceof Error ? error.message : 'Unknown error',
-        })
+        send({ phase: 'error', status: 'error', message: error instanceof Error ? error.message : 'Unknown error' })
       } finally {
         clearInterval(keepAlive)
-        if (!closed) {
-          try { controller.close() } catch { /* already closed */ }
-        }
+        if (!closed) { try { controller.close() } catch { /* already closed */ } }
       }
     },
   })

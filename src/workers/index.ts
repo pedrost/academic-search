@@ -5,6 +5,7 @@ import './linkedin-worker'
 import './sucupira-worker'
 import './bdtd-worker'
 import './ufms-worker'
+import './enrichment-worker'
 import { scraperQueue, enrichmentQueue } from '@/lib/queue'
 import { setWorkerStatus } from '@/lib/worker-control'
 import { logWorkerActivity } from '@/lib/worker-logger'
@@ -15,10 +16,12 @@ async function initializeWorkers() {
   await setWorkerStatus('bdtd', 'running')
   await setWorkerStatus('ufms', 'running')
   await setWorkerStatus('linkedin', 'running')
+  await setWorkerStatus('enrichment', 'running')
   await logWorkerActivity('sucupira', 'success', 'Worker initialized')
   await logWorkerActivity('bdtd', 'success', 'Worker initialized')
   await logWorkerActivity('ufms', 'success', 'Worker initialized')
   await logWorkerActivity('linkedin', 'success', 'Worker initialized')
+  await logWorkerActivity('enrichment', 'success', 'Worker initialized')
 }
 
 // Schedule jobs to run periodically
@@ -91,20 +94,17 @@ start().catch((error) => {
 })
 
 // Handle graceful shutdown
-process.on('SIGTERM', async () => {
+async function shutdown() {
   console.log('Worker scheduler: Shutting down...')
-  await setWorkerStatus('sucupira', 'stopped')
-  await setWorkerStatus('bdtd', 'stopped')
-  await setWorkerStatus('ufms', 'stopped')
-  await setWorkerStatus('linkedin', 'stopped')
+  await Promise.all([
+    setWorkerStatus('sucupira', 'stopped'),
+    setWorkerStatus('bdtd', 'stopped'),
+    setWorkerStatus('ufms', 'stopped'),
+    setWorkerStatus('linkedin', 'stopped'),
+    setWorkerStatus('enrichment', 'stopped'),
+  ])
   process.exit(0)
-})
+}
 
-process.on('SIGINT', async () => {
-  console.log('Worker scheduler: Shutting down...')
-  await setWorkerStatus('sucupira', 'stopped')
-  await setWorkerStatus('bdtd', 'stopped')
-  await setWorkerStatus('ufms', 'stopped')
-  await setWorkerStatus('linkedin', 'stopped')
-  process.exit(0)
-})
+process.on('SIGTERM', shutdown)
+process.on('SIGINT', shutdown)

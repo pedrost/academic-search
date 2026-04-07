@@ -7,7 +7,7 @@
 
 import { redis } from '@/lib/queue'
 
-export type WorkerName = 'sucupira' | 'bdtd' | 'ufms' | 'linkedin'
+export type WorkerName = 'sucupira' | 'bdtd' | 'ufms' | 'linkedin' | 'enrichment'
 export type LogLevel = 'info' | 'success' | 'error' | 'warning'
 
 interface LogEntry {
@@ -78,7 +78,7 @@ export async function getWorkerLogs(worker: WorkerName, limit: number = 50): Pro
  * Get recent logs for all workers
  */
 export async function getAllWorkerLogs(limit: number = 20): Promise<LogEntry[]> {
-  const workers: WorkerName[] = ['sucupira', 'bdtd', 'ufms', 'linkedin']
+  const workers: WorkerName[] = ['sucupira', 'bdtd', 'ufms', 'linkedin', 'enrichment']
   const allLogs: LogEntry[] = []
 
   for (const worker of workers) {

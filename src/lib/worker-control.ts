@@ -7,7 +7,7 @@
 
 import { redis } from '@/lib/queue'
 
-export type WorkerName = 'sucupira' | 'bdtd' | 'ufms' | 'linkedin'
+export type WorkerName = 'sucupira' | 'bdtd' | 'ufms' | 'linkedin' | 'enrichment'
 export type WorkerStatus = 'running' | 'paused' | 'stopped'
 
 const WORKER_STATUS_PREFIX = 'worker:status:'
@@ -39,7 +39,7 @@ export async function shouldWorkerRun(worker: WorkerName): Promise<boolean> {
  * Get all worker statuses
  */
 export async function getAllWorkerStatuses(): Promise<Record<WorkerName, WorkerStatus>> {
-  const workers: WorkerName[] = ['sucupira', 'bdtd', 'ufms', 'linkedin']
+  const workers: WorkerName[] = ['sucupira', 'bdtd', 'ufms', 'linkedin', 'enrichment']
   const statuses: Record<WorkerName, WorkerStatus> = {} as Record<WorkerName, WorkerStatus>
 
   for (const worker of workers) {
