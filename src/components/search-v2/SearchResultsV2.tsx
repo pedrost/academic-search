@@ -1,11 +1,12 @@
 'use client'
 
 import { Button, ButtonGroup, Pagination, Chip } from '@nextui-org/react'
-import { Grid3X3, List, SortAsc, Globe, FileSpreadsheet } from 'lucide-react'
+import { Grid3X3, List, SortAsc, Globe, FileSpreadsheet, Terminal } from 'lucide-react'
 import { useCallback, useRef, useState } from 'react'
 import { AcademicCardV2 } from './AcademicCardV2'
 import { SkeletonCard } from './SkeletonCard'
 import { WebDiscoveryProgress, DiscoveryStep, DiscoveryPhase } from './WebDiscoveryProgress'
+import { WebDiscoveryModal, DiscoverySource } from './WebDiscoveryModal'
 import { ImportXlsModal } from '@/components/import/ImportXlsModal'
 import { ImportXlsProgress, ImportStep, ImportPhase } from '@/components/import/ImportXlsProgress'
 import { SearchResult, SearchFilters } from '@/types'
@@ -30,12 +31,23 @@ type Props = {
 
 type ViewMode = 'grid' | 'list'
 
-const INITIAL_STEPS: DiscoveryStep[] = [
-  { phase: 'discovery', status: 'pending' },
-  { phase: 'saving', status: 'pending' },
-  { phase: 'enrichment', status: 'pending' },
-  { phase: 'linkedin', status: 'pending' },
-]
+function buildDiscoverySteps(sources: DiscoverySource[]): DiscoveryStep[] {
+  const steps: DiscoveryStep[] = []
+  if (sources.includes('grok'))      steps.push({ phase: 'discovery', status: 'pending' })
+  if (sources.includes('lattes'))    steps.push({ phase: 'discovery', status: 'pending' })
+  if (sources.includes('serpapi'))   steps.push({ phase: 'enrichment', status: 'pending' })
+  if (sources.includes('proxycurl')) steps.push({ phase: 'enrichment', status: 'pending' })
+  if (sources.includes('linkedin'))  steps.push({ phase: 'linkedin', status: 'pending' })
+  // Deduplicate by phase
+  const seen = new Set<DiscoveryPhase>()
+  return steps.filter(s => {
+    if (seen.has(s.phase)) return false
+    seen.add(s.phase)
+    return true
+  })
+}
+
+const DEFAULT_SOURCES: DiscoverySource[] = ['lattes', 'linkedin']
 
 const INITIAL_IMPORT_STEPS: ImportStep[] = [
   { phase: 'parsing', status: 'pending' },
@@ -54,9 +66,10 @@ export function SearchResultsV2({
   onImportComplete,
 }: Props) {
   const [viewMode, setViewMode] = useState<ViewMode>('grid')
+  const [showDiscoveryModal, setShowDiscoveryModal] = useState(false)
   const [isSearchingWeb, setIsSearchingWeb] = useState(false)
   const [webSearchError, setWebSearchError] = useState<string | null>(null)
-  const [discoverySteps, setDiscoverySteps] = useState<DiscoveryStep[]>(INITIAL_STEPS)
+  const [discoverySteps, setDiscoverySteps] = useState<DiscoveryStep[]>([])
   const [streamError, setStreamError] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
 
@@ -75,19 +88,21 @@ export function SearchResultsV2({
     )
   }, [])
 
-  const handleWebSearch = async () => {
+  const handleWebSearch = async (sources: DiscoverySource[] = DEFAULT_SOURCES) => {
     if (!filters?.query) return
 
+    setShowDiscoveryModal(false)
     setIsSearchingWeb(true)
     setWebSearchError(null)
     setStreamError(null)
-    setDiscoverySteps(INITIAL_STEPS.map(s => ({ ...s, status: 'pending', message: undefined })))
+    setDiscoverySteps(buildDiscoverySteps(sources))
 
     abortRef.current = new AbortController()
 
     try {
+      const sourcesParam = sources.join(',')
       const res = await fetch(
-        `/api/discover-academic?name=${encodeURIComponent(filters.query)}`,
+        `/api/discover-academic?name=${encodeURIComponent(filters.query)}&sources=${sourcesParam}`,
         { signal: abortRef.current.signal }
       )
 
@@ -252,20 +267,22 @@ export function SearchResultsV2({
           <Button
             size="sm"
             variant="flat"
+            className="bg-white/5 text-gray-400 hover:bg-white/10 border-0"
             startContent={<SortAsc className="w-4 h-4" />}
           >
             Relevância
           </Button>
           {result && result.total > 0 && (
-            <Chip size="sm" variant="flat">
+            <span className="text-sm font-mono text-gray-500">
               {result.total} resultado{result.total !== 1 ? 's' : ''}
-            </Chip>
+            </span>
           )}
         </div>
         <div className="flex items-center gap-2">
           <Button
             size="sm"
             variant="flat"
+            className="bg-white/5 text-gray-400 hover:bg-white/10 border-0"
             startContent={<FileSpreadsheet className="w-4 h-4" />}
             onPress={() => setShowImportModal(true)}
           >
@@ -274,14 +291,14 @@ export function SearchResultsV2({
           <ButtonGroup size="sm" variant="flat">
             <Button
               isIconOnly
-              color={viewMode === 'grid' ? 'primary' : 'default'}
+              className={viewMode === 'grid' ? 'bg-violet-500/20 text-violet-400' : 'bg-white/5 text-gray-500 hover:bg-white/10'}
               onPress={() => setViewMode('grid')}
             >
               <Grid3X3 className="w-4 h-4" />
             </Button>
             <Button
               isIconOnly
-              color={viewMode === 'list' ? 'primary' : 'default'}
+              className={viewMode === 'list' ? 'bg-violet-500/20 text-violet-400' : 'bg-white/5 text-gray-500 hover:bg-white/10'}
               onPress={() => setViewMode('list')}
             >
               <List className="w-4 h-4" />
@@ -307,12 +324,12 @@ export function SearchResultsV2({
 
       {/* Empty State */}
       {!isLoading && (!result || result.academics.length === 0) && (
-        <div className="text-center py-16 bg-default-50 rounded-2xl">
-          <div className="text-6xl mb-4">🔍</div>
-          <h3 className="text-xl font-semibold text-default-700 mb-2">
+        <div className="text-center py-16 bg-[#1a1b26] rounded-xl border border-white/5">
+          <Terminal className="w-12 h-12 text-gray-700 mx-auto mb-4" />
+          <h3 className="text-lg font-semibold text-gray-300 mb-2">
             Nenhum acadêmico encontrado
           </h3>
-          <p className="text-default-500 max-w-md mx-auto mb-6">
+          <p className="text-gray-500 max-w-md mx-auto mb-6 text-sm">
             {hasSearchQuery
               ? 'Não encontramos este acadêmico no banco de dados.'
               : 'Tente remover alguns filtros ou buscar por termos diferentes.'
@@ -322,23 +339,22 @@ export function SearchResultsV2({
           {hasSearchQuery && (
             <div className="space-y-3">
               <Button
-                color="primary"
                 variant="solid"
                 size="lg"
                 isLoading={isSearchingWeb}
-                onPress={handleWebSearch}
+                onPress={() => setShowDiscoveryModal(true)}
                 startContent={!isSearchingWeb && <Globe className="w-5 h-5" />}
-                className="font-medium"
+                className="bg-violet-600 text-white hover:bg-violet-500 font-medium"
               >
                 {isSearchingWeb ? 'Buscando na web...' : 'Buscar acadêmico na web'}
               </Button>
 
               {webSearchError && !isSearchingWeb && (
-                <p className="text-sm text-danger-500">{webSearchError}</p>
+                <p className="text-sm text-red-400">{webSearchError}</p>
               )}
 
-              <p className="text-xs text-default-400 max-w-sm mx-auto">
-                Usamos IA para buscar informações públicas sobre o acadêmico na internet
+              <p className="text-xs text-gray-600 max-w-sm mx-auto">
+                Escolha as fontes: Lattes, LinkedIn, SerpAPI, Proxycurl ou Grok AI
               </p>
             </div>
           )}
@@ -373,13 +389,21 @@ export function SearchResultsV2({
                 showControls
                 color="primary"
               />
-              <p className="text-sm text-default-400">
-                Mostrando {showingStart}-{showingEnd} de {result.total}
+              <p className="text-sm text-gray-500 font-mono">
+                {showingStart}-{showingEnd} de {result.total}
               </p>
             </div>
           )}
         </>
       )}
+
+      {/* Web Discovery Source Selection Modal */}
+      <WebDiscoveryModal
+        isOpen={showDiscoveryModal}
+        searchName={filters?.query || ''}
+        onClose={() => setShowDiscoveryModal(false)}
+        onStart={handleWebSearch}
+      />
 
       {/* Web Discovery Progress Modal */}
       <WebDiscoveryProgress

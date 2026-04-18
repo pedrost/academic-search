@@ -1,28 +1,17 @@
-import { Card, CardBody, Skeleton } from '@nextui-org/react'
-
 export function SkeletonCard() {
   return (
-    <Card className="w-full">
-      <CardBody className="gap-3">
-        <div className="flex gap-3">
-          <Skeleton className="rounded-full w-12 h-12" />
-          <div className="flex flex-col gap-2 flex-1">
-            <Skeleton className="h-4 w-3/4 rounded-lg" />
-            <Skeleton className="h-3 w-1/2 rounded-lg" />
-          </div>
-          <Skeleton className="h-6 w-20 rounded-full" />
-        </div>
-        <div className="flex gap-2">
-          <Skeleton className="h-6 w-16 rounded-full" />
-          <Skeleton className="h-6 w-24 rounded-full" />
-          <Skeleton className="h-6 w-16 rounded-full" />
-        </div>
-        <Skeleton className="h-12 w-full rounded-lg" />
-        <div className="flex justify-between">
-          <Skeleton className="h-8 w-24 rounded-lg" />
-          <Skeleton className="h-8 w-20 rounded-lg" />
-        </div>
-      </CardBody>
-    </Card>
+    <div className="bg-[#1a1b26] border border-white/8 rounded-xl p-4 space-y-3 animate-pulse">
+      <div className="flex justify-between">
+        <div className="h-5 w-3/5 bg-white/5 rounded" />
+        <div className="h-4 w-12 bg-white/5 rounded font-mono" />
+      </div>
+      <div className="h-4 w-2/3 bg-white/5 rounded" />
+      <div className="h-4 w-1/3 bg-white/5 rounded" />
+      <div className="flex gap-2 pt-1">
+        <div className="h-6 w-16 bg-violet-500/10 rounded-full" />
+        <div className="h-6 w-24 bg-white/5 rounded-full" />
+      </div>
+      <div className="h-10 w-full bg-white/5 rounded" />
+    </div>
   )
 }

@@ -7,7 +7,7 @@ import { SearchFiltersV2, SearchResultsV2 } from '@/components/search-v2'
 import { SearchFilters as SearchFiltersType, SearchResult } from '@/types'
 import { useDebounce } from '@/hooks/useDebounce'
 import { motion } from 'framer-motion'
-import { GraduationCap, Search, Sparkles } from 'lucide-react'
+import { Terminal, Database, Zap } from 'lucide-react'
 
 async function fetchAcademics(
   filters: SearchFiltersType,
@@ -44,16 +44,13 @@ export default function HomePage() {
   const [filters, setFilters] = useState<SearchFiltersType>({})
   const [page, setPage] = useState(1)
 
-  // Debounce text search only
   const debouncedQuery = useDebounce(filters.query, 300)
 
-  // Create effective filters with debounced query
   const effectiveFilters = {
     ...filters,
     query: debouncedQuery,
   }
 
-  // Reset page when filters change
   useEffect(() => {
     setPage(1)
   }, [
@@ -83,7 +80,7 @@ export default function HomePage() {
   const { data: stats } = useQuery({
     queryKey: ['stats'],
     queryFn: fetchStats,
-    staleTime: 5 * 60 * 1000, // 5 minutes
+    staleTime: 5 * 60 * 1000,
   })
 
   const { data, isLoading, isFetching } = useQuery({
@@ -95,59 +92,54 @@ export default function HomePage() {
   return (
     <main className="min-h-screen">
       {/* Hero Section */}
-      <section className="relative overflow-hidden bg-gradient-to-br from-primary-600 via-primary-700 to-violet-600 text-white">
-        <div
-          className="absolute inset-0 bg-grid-white/[0.05] bg-[size:60px_60px]"
-          aria-hidden="true"
-        />
-        <div className="container mx-auto px-4 pt-16 pb-24 md:pt-20 md:pb-32 relative">
+      <section className="relative overflow-hidden border-b border-white/5">
+        <div className="absolute inset-0 bg-grid" aria-hidden="true" />
+        <div className="absolute inset-0 bg-gradient-to-b from-violet-500/5 via-transparent to-transparent" />
+
+        <div className="container mx-auto px-4 pt-12 pb-16 md:pt-16 md:pb-20 relative">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6 }}
+            transition={{ duration: 0.5 }}
             className="max-w-3xl mx-auto text-center"
           >
-            <h1 className="text-3xl md:text-4xl lg:text-5xl font-bold mb-4 leading-tight">
-              Encontre Pesquisadores
-              <span className="block text-violet-200 drop-shadow-sm">
-                em Mato Grosso do Sul
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-violet-500/10 border border-violet-500/20 text-violet-400 text-sm font-mono mb-6">
+              <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
+              hunter v2.0
+            </div>
+
+            <h1 className="text-3xl md:text-4xl lg:text-5xl font-bold mb-4 leading-tight tracking-tight">
+              <span className="text-gray-100">Academic </span>
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-violet-400 to-cyan-400">
+                Discovery
               </span>
             </h1>
 
-            <p className="text-base md:text-lg text-white/90 mb-6 max-w-2xl mx-auto">
-              Explore perfis de acadêmicos, dissertações e teses de mestrado e doutorado.
+            <p className="text-base md:text-lg text-gray-400 mb-8 max-w-2xl mx-auto">
+              Pesquisadores, dissertações e teses de mestrado e doutorado em Mato Grosso do Sul.
             </p>
 
-            <div className="flex flex-wrap items-center justify-center gap-4 text-sm">
-              <div className="flex items-center gap-2">
-                <GraduationCap className="w-5 h-5 text-violet-300" aria-hidden="true" />
-                <span>{stats?.total || '...'} perfis</span>
+            <div className="flex flex-wrap items-center justify-center gap-6 text-sm font-mono">
+              <div className="flex items-center gap-2 text-gray-500">
+                <Database className="w-4 h-4 text-violet-400" />
+                <span className="text-gray-300">{stats?.total?.toLocaleString() || '...'}</span>
+                <span>perfis</span>
               </div>
-              <div className="flex items-center gap-2">
-                <Search className="w-5 h-5 text-violet-300" aria-hidden="true" />
-                <span>Busca instantânea</span>
+              <div className="flex items-center gap-2 text-gray-500">
+                <Terminal className="w-4 h-4 text-cyan-400" />
+                <span>multi-source</span>
               </div>
-              <div className="flex items-center gap-2">
-                <Sparkles className="w-5 h-5 text-violet-300" aria-hidden="true" />
-                <span>Dados atualizados</span>
+              <div className="flex items-center gap-2 text-gray-500">
+                <Zap className="w-4 h-4 text-yellow-400" />
+                <span>real-time</span>
               </div>
             </div>
           </motion.div>
         </div>
-
-        {/* Wave divider */}
-        <div className="absolute bottom-0 left-0 right-0">
-          <svg viewBox="0 0 1440 120" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path
-              d="M0 120L60 105C120 90 240 60 360 45C480 30 600 30 720 37.5C840 45 960 60 1080 67.5C1200 75 1320 75 1380 75L1440 75V120H1380C1320 120 1200 120 1080 120C960 120 840 120 720 120C600 120 480 120 360 120C240 120 120 120 60 120H0Z"
-              fill="rgb(249 250 251)"
-            />
-          </svg>
-        </div>
       </section>
 
       {/* Search Section */}
-      <section className="container mx-auto px-4 py-8">
+      <section className="container mx-auto px-4 py-6">
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
           <aside className="lg:col-span-1">
             <SearchFiltersV2 filters={filters} onFilterChange={setFilters} />

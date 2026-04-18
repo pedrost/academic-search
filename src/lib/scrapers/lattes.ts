@@ -2,20 +2,52 @@
  * CNPq Lattes Scraper
  *
  * CAPTCHA-avoidance strategy:
- *   1. Use Google (via stealth Playwright) to find the Lattes 16-digit ID
- *      from result URLs — never hits the CNPq search UI where CAPTCHAs appear.
- *   2. Fetch the CV directly at visualizacv.do?id={lattesId} — no CAPTCHA.
- *   3. Parse the "Atuação Profissional" section for current employer.
+ *   1. ID search: Scrapling Python sidecar (scripts/scrapling-lattes-search.py)
+ *      Uses curl_cffi TLS fingerprint impersonation — requests look like real
+ *      Chrome at the TLS/JA3 level. Searches DDG/Bing/Brave/Startpage.
+ *      No browser needed; fast and durable against bot detection.
+ *   2. CV fetch: SKIPPED by default (CNPq always shows reCAPTCHA).
+ *      Only attempted if a CNPq session exists (admin solved CAPTCHA via
+ *      /admin/browser, cookies saved to data/cnpq-cookies.json).
+ *      The Lattes ID + URL are always saved even without CV data.
  *
- * Rate limiting: 8–15s random delay between academics is enough to stay
- * under Google's radar at this pace.
+ * Rate limiting: 8–15s random delay between academics.
  */
 
-import { Page } from 'playwright'
+import { execFile } from 'child_process'
+import { promisify } from 'util'
+import path from 'path'
+import fs from 'fs'
+import { Page, BrowserContext } from 'playwright'
 import { getBrowser, createStealthContext, randomDelay } from './browser'
+
+const execFileAsync = promisify(execFile)
+const SCRAPLING_SCRIPT = path.join(process.cwd(), 'scripts', 'scrapling-lattes-search.py')
 
 const LATTES_CV_BASE = 'http://buscatextual.cnpq.br/buscatextual/visualizacv.do'
 const LATTES_ID_PATTERN = /\d{16}/
+const CNPQ_COOKIES_PATH = path.join(process.cwd(), 'data', 'cnpq-cookies.json')
+
+// ── CNPq session persistence ───────────────────────────────────────────────
+export function hasCnpqSession(): boolean {
+  try {
+    return fs.existsSync(CNPQ_COOKIES_PATH) && fs.statSync(CNPQ_COOKIES_PATH).size > 10
+  } catch { return false }
+}
+
+export function loadCnpqCookies(): any[] {
+  try { return JSON.parse(fs.readFileSync(CNPQ_COOKIES_PATH, 'utf-8')) }
+  catch { return [] }
+}
+
+export function saveCnpqCookies(cookies: any[]): void {
+  fs.mkdirSync(path.dirname(CNPQ_COOKIES_PATH), { recursive: true })
+  fs.writeFileSync(CNPQ_COOKIES_PATH, JSON.stringify(cookies, null, 2))
+}
+
+export function clearCnpqSession(): void {
+  try { fs.unlinkSync(CNPQ_COOKIES_PATH) } catch { /* already gone */ }
+}
 
 export interface LattesEmployment {
   jobTitle: string | null
@@ -35,6 +67,7 @@ export interface LattesData {
 }
 
 let lattesPage: Page | null = null
+let lattesContext: BrowserContext | null = null
 
 async function getLattesPage(): Promise<Page> {
   if (lattesPage) {
@@ -46,22 +79,76 @@ async function getLattesPage(): Promise<Page> {
     }
   }
   const browser = await getBrowser()
-  const context = await createStealthContext(browser)
-  lattesPage = await context.newPage()
+  lattesContext = await createStealthContext(browser)
+
+  // Restore saved CNPq cookies if available
+  if (hasCnpqSession()) {
+    const cookies = loadCnpqCookies()
+    if (cookies.length > 0) {
+      await lattesContext.addCookies(cookies)
+    }
+  }
+
+  lattesPage = await lattesContext.newPage()
   return lattesPage
 }
 
 /**
- * Find the Lattes 16-digit ID for an academic via a Google search.
+ * Find the Lattes 16-digit ID via the Scrapling Python sidecar.
+ * The sidecar uses TLS fingerprint impersonation so DuckDuckGo/Bing cannot
+ * distinguish the request from a real Chrome browser.
+ */
+async function findLattesIdViaSidecar(
+  name: string,
+  context?: { institution?: string | null; state?: string | null },
+  onLog?: (msg: string) => void
+): Promise<string | null> {
+  const args: string[] = [SCRAPLING_SCRIPT, name]
+  if (context?.institution) args.push('--institution', context.institution)
+  else if (context?.state) args.push('--state', context.state)
+
+  onLog?.(`[Scrapling] Buscando "${name}" via DuckDuckGo/Bing com TLS impersonation...`)
+
+  try {
+    const { stdout } = await execFileAsync('python', args, { timeout: 60_000 })
+    const result = JSON.parse(stdout.trim())
+    if (result.lattesId) {
+      onLog?.(`[Scrapling] ID encontrado: ${result.lattesId} (fonte: ${result.source})`)
+    } else {
+      onLog?.(`[Scrapling] Não encontrado${result.error ? ` — ${result.error}` : ''}`)
+    }
+    return result.lattesId ?? null
+  } catch (err) {
+    onLog?.(`[Scrapling] Erro ao executar sidecar: ${err instanceof Error ? err.message : String(err)}`)
+    return null
+  }
+}
+
+/**
+ * Find the Lattes 16-digit ID for an academic.
+ *
+ * Strategy:
+ *   1. Scrapling Python sidecar — TLS fingerprint impersonation, no browser
+ *   2. Google via stealth Playwright (fallback for difficult names or if sidecar unavailable)
+ *
  * Returns null if not found.
  */
 export async function findLattesId(
   name: string,
-  context?: { institution?: string | null; state?: string | null; city?: string | null }
+  context?: { institution?: string | null; state?: string | null; city?: string | null },
+  onLog?: (msg: string) => void
 ): Promise<string | null> {
+  // 1. Try Scrapling sidecar — TLS-impersonated, no browser needed
+  const sidecarId = await findLattesIdViaSidecar(name, context, onLog)
+  if (sidecarId) {
+    return sidecarId
+  }
+
+  onLog?.(`[Lattes] Scrapling não encontrou — fallback para Google via Playwright`)
+
+  // 2. Fallback: Google via Playwright (original approach)
   const page = await getLattesPage()
 
-  // Build Google query — site:lattes.cnpq.br narrows to CV pages directly
   const institutionHint = context?.institution ? ` "${context.institution}"` : ''
   const stateHint = context?.state && !context?.institution ? ` "${context.state}"` : ''
   const query = `"${name}"${institutionHint}${stateHint} site:lattes.cnpq.br`
@@ -71,7 +158,6 @@ export async function findLattesId(
     await page.goto(googleUrl, { waitUntil: 'domcontentloaded', timeout: 20000 })
     await randomDelay(2000, 4000)
 
-    // Extract all hrefs from Google results that contain lattes.cnpq.br
     const lattesUrls = await page.evaluate(() => {
       const anchors = Array.from(document.querySelectorAll('a[href]'))
       return anchors
@@ -84,7 +170,6 @@ export async function findLattesId(
       if (match) return match[0]
     }
 
-    // Fallback: try without site: restriction
     if (institutionHint || stateHint) {
       const fallbackQuery = `"${name}" lattes cnpq${stateHint}`
       const fallbackUrl = `https://www.google.com/search?q=${encodeURIComponent(fallbackQuery)}&hl=pt-BR&num=5`
@@ -107,28 +192,57 @@ export async function findLattesId(
 
     return null
   } catch (error) {
-    console.error('[Lattes] Google search failed:', error instanceof Error ? error.message : error)
+    console.error('[Lattes] Google fallback also failed:', error instanceof Error ? error.message : error)
     return null
   }
 }
 
 /**
  * Fetch and parse a Lattes CV given a 16-digit ID.
- * The visualizacv.do page loads without CAPTCHA.
+ *
+ * CNPq always presents a reCAPTCHA before showing the CV.
+ * This only works if a CNPq session exists (admin solved CAPTCHA once
+ * via /admin/browser → cookies saved). Returns null on CAPTCHA.
  */
-export async function fetchLattesCv(lattesId: string): Promise<LattesData | null> {
+export async function fetchLattesCv(lattesId: string, onLog?: (msg: string) => void): Promise<LattesData | null> {
+  // Skip CV fetch entirely if no CNPq session — saves 30s timeout
+  if (!hasCnpqSession()) {
+    onLog?.(`[Lattes] CV ignorado — sem sessão CNPq (resolva CAPTCHA em /admin/browser)`)
+    return null
+  }
+
   const page = await getLattesPage()
   const cvUrl = `${LATTES_CV_BASE}?id=${lattesId}`
+
+  onLog?.(`[Lattes] Abrindo CV: ${cvUrl}`)
 
   try {
     await page.goto(cvUrl, { waitUntil: 'networkidle', timeout: 30000 })
     await randomDelay(1000, 2000)
 
+    // Detect CAPTCHA page
+    const hasCaptcha = await page.evaluate(() => {
+      return !!document.querySelector('.captcha, .divCaptcha, #divCaptcha, [id*="captcha"]')
+    })
+
+    if (hasCaptcha) {
+      onLog?.(`[Lattes] CAPTCHA detectado — sessão expirada. Resolva novamente em /admin/browser`)
+      clearCnpqSession()
+      return null
+    }
+
     // Check we actually got a CV page (not a redirect to login)
     const title = await page.title()
     if (title.toLowerCase().includes('login') || title.toLowerCase().includes('erro')) {
-      console.warn(`[Lattes] CV page returned unexpected title: ${title}`)
+      onLog?.(`[Lattes] Página inesperada: "${title}" — possível erro`)
       return null
+    }
+    onLog?.(`[Lattes] CV carregado com sucesso`)
+
+    // Save cookies — session is valid
+    if (lattesContext) {
+      const cookies = await lattesContext.cookies()
+      saveCnpqCookies(cookies)
     }
 
     const data = await page.evaluate((id: string) => {
@@ -242,18 +356,45 @@ export async function fetchLattesCv(lattesId: string): Promise<LattesData | null
 }
 
 /**
- * Full lookup: find ID via Google, then fetch CV.
- * Returns null if academic cannot be found on Lattes.
+ * Full lookup: find Lattes ID, then optionally fetch CV.
+ *
+ * The CV fetch is only attempted when a valid CNPq session exists
+ * (admin solved CAPTCHA once via /admin/browser). Without a session,
+ * returns minimal data with just the ID and URL — still valuable for
+ * linking and for the user to open manually.
  */
 export async function lookupLattes(
   name: string,
-  context?: { institution?: string | null; state?: string | null; city?: string | null }
+  context?: { institution?: string | null; state?: string | null; city?: string | null },
+  onLog?: (msg: string) => void
 ): Promise<LattesData | null> {
-  const lattesId = await findLattesId(name, context)
-  if (!lattesId) return null
+  const lattesId = await findLattesId(name, context, onLog)
+  if (!lattesId) {
+    onLog?.(`[Lattes] ID não encontrado para "${name}"`)
+    return null
+  }
 
-  await randomDelay(8000, 15000) // human-like pause before fetching CV
-  return fetchLattesCv(lattesId)
+  // Only attempt CV fetch if we have a CNPq session (avoids 30s CAPTCHA timeout)
+  if (hasCnpqSession()) {
+    onLog?.(`[Lattes] Sessão CNPq encontrada — tentando buscar CV...`)
+    await randomDelay(3000, 6000)
+    const cv = await fetchLattesCv(lattesId, onLog)
+    if (cv) return cv
+  } else {
+    onLog?.(`[Lattes] Sem sessão CNPq — CV ignorado (resolva CAPTCHA em /admin/browser para dados completos)`)
+  }
+
+  // Return minimal data with ID + URL
+  return {
+    lattesId,
+    lattesUrl: `http://lattes.cnpq.br/${lattesId}`,
+    name: null,
+    currentEmployment: null,
+    allEmployment: [],
+    researchAreas: [],
+    highestDegree: null,
+    institution: null,
+  }
 }
 
 /** Release the shared Lattes page */

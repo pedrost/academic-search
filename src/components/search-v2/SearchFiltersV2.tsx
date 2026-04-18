@@ -16,7 +16,6 @@ type Props = {
   onFilterChange: (filters: SearchFiltersType) => void
 }
 
-// Custom Select component to avoid NextUI Select issues
 function CustomSelect({
   label,
   placeholder,
@@ -34,29 +33,26 @@ function CustomSelect({
 
   return (
     <div className="relative">
-      <p className="text-sm font-medium text-default-700 mb-2">{label}</p>
+      <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">{label}</p>
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between px-3 py-2 text-sm border-2 border-default-200 rounded-lg bg-white hover:border-default-400 transition-colors text-left"
+        className="w-full flex items-center justify-between px-3 py-2 text-sm border border-white/10 rounded-lg bg-white/5 hover:bg-white/10 hover:border-white/20 transition-colors text-left"
       >
-        <span className={value ? 'text-default-900' : 'text-default-400'}>
+        <span className={value ? 'text-gray-200' : 'text-gray-500'}>
           {value || placeholder}
         </span>
-        <ChevronDown className={`w-4 h-4 text-default-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        <ChevronDown className={`w-4 h-4 text-gray-500 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
       </button>
       {isOpen && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)} />
-          <div className="absolute z-50 mt-1 w-full max-h-60 overflow-auto bg-white border border-default-200 rounded-lg shadow-lg">
+          <div className="absolute z-50 mt-1 w-full max-h-60 overflow-auto bg-[#1a1b26] border border-white/10 rounded-lg shadow-2xl">
             {value && (
               <button
                 type="button"
-                onClick={() => {
-                  onChange(undefined)
-                  setIsOpen(false)
-                }}
-                className="w-full px-3 py-2 text-sm text-left text-danger-500 hover:bg-danger-50 border-b border-default-100"
+                onClick={() => { onChange(undefined); setIsOpen(false) }}
+                className="w-full px-3 py-2 text-sm text-left text-red-400 hover:bg-white/5 border-b border-white/5"
               >
                 Limpar seleção
               </button>
@@ -65,12 +61,9 @@ function CustomSelect({
               <button
                 key={option}
                 type="button"
-                onClick={() => {
-                  onChange(option)
-                  setIsOpen(false)
-                }}
-                className={`w-full px-3 py-2 text-sm text-left hover:bg-primary-50 flex items-center justify-between ${
-                  value === option ? 'bg-primary-50 text-primary-600' : 'text-default-700'
+                onClick={() => { onChange(option); setIsOpen(false) }}
+                className={`w-full px-3 py-2 text-sm text-left hover:bg-white/5 flex items-center justify-between ${
+                  value === option ? 'bg-violet-500/10 text-violet-400' : 'text-gray-300'
                 }`}
               >
                 <span>{option}</span>
@@ -84,7 +77,6 @@ function CustomSelect({
   )
 }
 
-// Custom Checkbox Group
 function CustomCheckboxGroup({
   label,
   options,
@@ -108,19 +100,19 @@ function CustomCheckboxGroup({
 
   return (
     <div>
-      <p className="text-sm font-medium text-default-700 mb-2">{label}</p>
-      <div className="space-y-1">
+      <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">{label}</p>
+      <div className="space-y-0.5">
         {options.map(({ key, label }) => (
           <label
             key={key}
             onClick={() => toggleValue(key)}
-            className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-default-100 cursor-pointer transition-colors"
+            className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-white/5 cursor-pointer transition-colors"
           >
             <div
               className={`w-4 h-4 rounded flex items-center justify-center transition-all duration-200 ${
                 isChecked(key)
-                  ? 'bg-violet-600 border-2 border-violet-600'
-                  : 'border-2 border-gray-300 bg-white'
+                  ? 'bg-violet-500 border-2 border-violet-500'
+                  : 'border-2 border-gray-600 bg-transparent'
               }`}
             >
               {isChecked(key) && (
@@ -129,7 +121,7 @@ function CustomCheckboxGroup({
                 </svg>
               )}
             </div>
-            <span className={`text-sm ${isChecked(key) ? 'text-violet-700 font-medium' : 'text-default-700'}`}>
+            <span className={`text-sm ${isChecked(key) ? 'text-violet-300 font-medium' : 'text-gray-400'}`}>
               {label}
             </span>
           </label>
@@ -164,47 +156,41 @@ export function SearchFiltersV2({ filters, onFilterChange }: Props) {
 
   return (
     <div className="lg:sticky lg:top-4">
-      <div className="bg-white rounded-xl shadow-md border border-default-200 overflow-hidden">
+      <div className="bg-[#1a1b26] rounded-xl border border-white/10 overflow-hidden">
         {/* Header */}
-        <div className="bg-gradient-to-r from-primary-500 to-violet-500 px-4 py-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Filter className="w-5 h-5 text-white" />
-              <span className="font-semibold text-white">Filtros</span>
-            </div>
-            {activeFilterCount > 0 && (
-              <span className="bg-white/20 text-white text-xs font-medium px-2 py-0.5 rounded-full">
-                {activeFilterCount}
-              </span>
-            )}
+        <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Filter className="w-4 h-4 text-violet-400" />
+            <span className="font-medium text-sm text-gray-200">Filtros</span>
           </div>
+          {activeFilterCount > 0 && (
+            <span className="bg-violet-500/20 text-violet-400 text-xs font-mono font-medium px-2 py-0.5 rounded-full">
+              {activeFilterCount}
+            </span>
+          )}
         </div>
 
         {/* Scrollable Content */}
         <div className="max-h-[calc(100vh-200px)] overflow-y-auto">
           <div className="p-4 space-y-5">
-            {/* Clear Filters Button */}
             {hasActiveFilters && (
               <div>
                 <Button
                   variant="flat"
-                  color="danger"
                   size="sm"
-                  className="w-full"
+                  className="w-full bg-red-500/10 text-red-400 hover:bg-red-500/20"
                   startContent={<X className="w-3 h-3" />}
                   onPress={clearAllFilters}
                 >
-                  Limpar todos os filtros
+                  Limpar filtros
                 </Button>
-                <Divider className="mt-4" />
+                <Divider className="mt-4 bg-white/5" />
               </div>
             )}
 
             {/* Search Input */}
             <div>
-              <p className="text-sm font-medium text-default-700 mb-2">
-                Buscar
-              </p>
+              <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">Buscar</p>
               <Input
                 placeholder="Nome ou palavra-chave..."
                 value={filters.query || ''}
@@ -212,17 +198,17 @@ export function SearchFiltersV2({ filters, onFilterChange }: Props) {
                   onFilterChange({ ...filters, query: value })
                 }
                 startContent={
-                  <Search className="w-4 h-4 text-default-400 flex-shrink-0" />
+                  <Search className="w-4 h-4 text-gray-500 flex-shrink-0" />
                 }
                 size="sm"
                 variant="bordered"
                 classNames={{
-                  inputWrapper: 'border-2',
+                  inputWrapper: 'border border-white/10 bg-white/5 hover:bg-white/10 data-[focus=true]:border-violet-500/50',
+                  input: 'text-gray-200 placeholder:text-gray-600',
                 }}
               />
             </div>
 
-            {/* Research Field */}
             <CustomSelect
               label="Área de Pesquisa"
               placeholder="Todas as áreas"
@@ -233,7 +219,6 @@ export function SearchFiltersV2({ filters, onFilterChange }: Props) {
               }
             />
 
-            {/* Degree Level */}
             <CustomCheckboxGroup
               label="Nível de Formação"
               options={Object.entries(DEGREE_LEVEL_LABELS).map(([key, label]) => ({
@@ -246,7 +231,6 @@ export function SearchFiltersV2({ filters, onFilterChange }: Props) {
               }
             />
 
-            {/* City */}
             <CustomSelect
               label="Cidade"
               placeholder="Todas as cidades"
@@ -257,7 +241,6 @@ export function SearchFiltersV2({ filters, onFilterChange }: Props) {
               }
             />
 
-            {/* Sector */}
             <CustomCheckboxGroup
               label="Setor Atual"
               options={Object.entries(SECTOR_LABELS)
@@ -271,9 +254,7 @@ export function SearchFiltersV2({ filters, onFilterChange }: Props) {
 
             {/* Year Range */}
             <div>
-              <p className="text-sm font-medium text-default-700 mb-2">
-                Ano de Formação
-              </p>
+              <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">Ano de Formação</p>
               <div className="grid grid-cols-2 gap-2">
                 <Input
                   type="number"
@@ -288,7 +269,8 @@ export function SearchFiltersV2({ filters, onFilterChange }: Props) {
                   size="sm"
                   variant="bordered"
                   classNames={{
-                    inputWrapper: 'border-2',
+                    inputWrapper: 'border border-white/10 bg-white/5 hover:bg-white/10 data-[focus=true]:border-violet-500/50',
+                    input: 'text-gray-200 placeholder:text-gray-600 font-mono',
                   }}
                 />
                 <Input
@@ -304,7 +286,8 @@ export function SearchFiltersV2({ filters, onFilterChange }: Props) {
                   size="sm"
                   variant="bordered"
                   classNames={{
-                    inputWrapper: 'border-2',
+                    inputWrapper: 'border border-white/10 bg-white/5 hover:bg-white/10 data-[focus=true]:border-violet-500/50',
+                    input: 'text-gray-200 placeholder:text-gray-600 font-mono',
                   }}
                 />
               </div>

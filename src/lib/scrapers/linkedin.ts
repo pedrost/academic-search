@@ -2,6 +2,7 @@ import { Page, BrowserContext } from 'playwright'
 import { getBrowser, createStealthContext, randomDelay } from './browser'
 import { prisma } from '@/lib/db'
 import { createTask } from '@/lib/db/tasks'
+import { hasSavedCookies, loadCookies, saveCookies } from './linkedin-auth'
 import { Sector } from '@prisma/client'
 
 const LINKEDIN_BASE = 'https://www.linkedin.com'
@@ -18,27 +19,66 @@ export type LinkedInProfile = {
 let linkedInContext: BrowserContext | null = null
 let linkedInPage: Page | null = null
 
-export async function initLinkedInSession() {
+/**
+ * Initialize a LinkedIn browser session using saved cookies.
+ * Returns { page, isNew } if session is ready.
+ * Returns { isLoggedIn: false } if no saved cookies exist — caller should skip LinkedIn.
+ */
+export async function initLinkedInSession(): Promise<{ page: Page; isNew: boolean } | { isLoggedIn: false }> {
   if (linkedInContext) {
     return { page: linkedInPage!, isNew: false }
   }
 
+  // Never open a browser if there are no saved cookies
+  if (!hasSavedCookies()) {
+    return { isLoggedIn: false }
+  }
+
   const browser = await getBrowser()
   linkedInContext = await createStealthContext(browser)
-  linkedInPage = await linkedInContext.newPage()
 
+  // Load saved cookies before any navigation
+  const cookies = loadCookies()
+  await linkedInContext.addCookies(cookies)
+
+  linkedInPage = await linkedInContext.newPage()
   await linkedInPage.goto(LINKEDIN_BASE, { waitUntil: 'networkidle' })
 
   return { page: linkedInPage, isNew: true }
 }
 
+/**
+ * Open a browser for manual admin login (no cookies required).
+ * Once the admin logs in, call checkLinkedInLoginStatus() to persist cookies.
+ * Only call from /admin/browser — not from automated enrichment.
+ */
+export async function openLoginBrowser(): Promise<void> {
+  if (linkedInContext) return  // already open
+
+  const browser = await getBrowser()
+  linkedInContext = await createStealthContext(browser)
+  linkedInPage = await linkedInContext.newPage()
+  await linkedInPage.goto(`${LINKEDIN_BASE}/login`, { waitUntil: 'networkidle' })
+}
+
+/**
+ * Check login status by navigating to /feed and seeing where LinkedIn lands us.
+ * Much more reliable than DOM selector checks (LinkedIn's HTML changes constantly).
+ */
 export async function checkLinkedInLoginStatus(): Promise<boolean> {
-  if (!linkedInPage) return false
+  if (!linkedInPage || !linkedInContext) return false
 
   try {
-    const isLoggedIn = await linkedInPage.evaluate(() => {
-      return !document.querySelector('a[data-tracking-control-name="guest_homepage-basic_sign-in-button"]')
-    })
+    await linkedInPage.goto(`${LINKEDIN_BASE}/feed/`, { waitUntil: 'domcontentloaded', timeout: 20000 })
+    const url = linkedInPage.url()
+
+    const isLoggedIn = url.includes('/feed') && !url.includes('/login') && !url.includes('/authwall') && !url.includes('/checkpoint')
+
+    if (isLoggedIn) {
+      const cookies = await linkedInContext.cookies()
+      saveCookies(cookies as any)
+    }
+
     return isLoggedIn
   } catch {
     return false

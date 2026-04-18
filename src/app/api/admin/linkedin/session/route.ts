@@ -3,16 +3,18 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import {
   initLinkedInSession,
+  openLoginBrowser,
   checkLinkedInLoginStatus,
   closeLinkedInSession,
 } from '@/lib/scrapers/linkedin'
+import { hasSavedCookies } from '@/lib/scrapers/linkedin-auth'
 
 export async function GET() {
   try {
     const isLoggedIn = await checkLinkedInLoginStatus()
-    return NextResponse.json({ isLoggedIn })
-  } catch (error) {
-    return NextResponse.json({ isLoggedIn: false })
+    return NextResponse.json({ isLoggedIn, hasCookies: hasSavedCookies() })
+  } catch {
+    return NextResponse.json({ isLoggedIn: false, hasCookies: hasSavedCookies() })
   }
 }
 
@@ -22,12 +24,20 @@ export async function POST(request: NextRequest) {
     const { action } = body
 
     if (action === 'start') {
-      const { isNew } = await initLinkedInSession()
+      // Admin-initiated: open browser for manual login (ignores saved cookies)
+      await openLoginBrowser()
       const isLoggedIn = await checkLinkedInLoginStatus()
-      return NextResponse.json({
-        message: isNew ? 'Session started' : 'Session already active',
-        isLoggedIn,
-      })
+      return NextResponse.json({ message: 'Browser opened for login', isLoggedIn })
+    }
+
+    if (action === 'resume') {
+      // Use saved cookies (for enrichment session reuse)
+      const result = await initLinkedInSession()
+      if ('isLoggedIn' in result) {
+        return NextResponse.json({ message: 'No saved cookies', isLoggedIn: false })
+      }
+      const isLoggedIn = await checkLinkedInLoginStatus()
+      return NextResponse.json({ message: 'Session resumed', isLoggedIn })
     }
 
     if (action === 'stop') {

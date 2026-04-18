@@ -1,295 +1,332 @@
 /**
  * BDTD Scraper Service
  *
- * Searches Biblioteca Digital Brasileira de Teses e Dissertacoes (BDTD)
- * for theses/dissertations from Mato Grosso do Sul institutions and saves to database.
+ * Uses BDTD (Biblioteca Digital Brasileira de Teses e Dissertações) VuFind REST API
+ * directly — no browser required. The API returns structured JSON.
+ *
+ * Institution filter: `filter[]=institution:UFMS` (5 334 records as of 2025)
+ *
+ * Year enrichment: for each UFMS repository URL in the result, fetches the
+ * DSpace item page (server-rendered HTML with Dublin Core meta tags) to extract
+ * year, abstract, advisor, and keywords. Done in small parallel batches.
  */
 
-import { chromium, Browser, BrowserContext, Page } from 'playwright'
 import { DegreeLevel } from '@prisma/client'
 import { upsertAcademicWithDissertation } from '@/lib/academic-upsert'
 import type { ScraperOptions, ScraperResult } from './types'
 
-// BDTD - Biblioteca Digital Brasileira de Teses e Dissertacoes
-const BDTD_BASE_URL = 'https://bdtd.ibict.br'
-const BDTD_SEARCH_URL = `${BDTD_BASE_URL}/vufind/Search/Results`
+const BDTD_API = 'https://bdtd.ibict.br/vufind/api/v1/search'
+const PAGE_SIZE = 100 // VuFind supports up to 100
+const ENRICH_CONCURRENCY = 5 // parallel UFMS repo fetches
 
-// Target institutions in Mato Grosso do Sul
-const INSTITUTIONS_MS = [
-  'Universidade Federal de Mato Grosso do Sul',
-  'Universidade Catolica Dom Bosco',
-  'Universidade Estadual de Mato Grosso do Sul',
-  'Instituto Federal de Mato Grosso do Sul',
-]
+// Institution codes in BDTD (ID prefix = institution code)
+const INSTITUTIONS: Record<string, string> = {
+  UFMS: 'Universidade Federal de Mato Grosso do Sul',
+}
 
-interface BDTDResult {
+interface BDTDRecord {
+  id: string
+  title: string
+  authors: {
+    primary: Record<string, unknown>
+    secondary: unknown[]
+    corporate: unknown[]
+  }
+  formats: string[]
+  subjects: string[][]
+  urls: Array<{ url: string; desc: string }>
+}
+
+interface EnrichedRecord {
   name: string
   title: string
-  year: number
+  year: number | null
   institution: string
   degreeLevel: DegreeLevel
   advisor?: string
   abstract?: string
+  keywords: string[]
   url?: string
 }
 
-// Shared browser instance for the scrape session
-let browser: Browser | null = null
-let browserContext: BrowserContext | null = null
-
-async function getBrowserContext(): Promise<BrowserContext> {
-  if (!browser) {
-    try {
-      // Try Chrome first (preferred)
-      browser = await chromium.launch({
-        headless: false,
-        channel: 'chrome',
-      })
-    } catch (chromeError) {
-      try {
-        // Fallback to Chromium
-        browser = await chromium.launch({
-          headless: false,
-        })
-      } catch (chromiumError) {
-        throw new Error('No browser available. Install Chrome or run: npx playwright install chromium')
-      }
-    }
-  }
-
-  if (!browserContext) {
-    browserContext = await browser.newContext({
-      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-    })
-  }
-
-  return browserContext
+function authorFromRecord(record: BDTDRecord): string {
+  const keys = Object.keys(record.authors?.primary ?? {})
+  return keys[0] ?? 'Unknown'
 }
 
-async function searchBDTD(
-  institution: string,
-  page: Page,
-  onProgress?: (msg: string) => void
-): Promise<BDTDResult[]> {
-  onProgress?.(`🔍 Searching BDTD for ${institution}...`)
+function degreeLevelFromFormats(formats: string[]): DegreeLevel {
+  const f = (formats ?? []).join(' ').toLowerCase()
+  if (f.includes('doctoral') || f.includes('doutorado') || f.includes('phd')) return 'PHD'
+  return 'MASTERS'
+}
 
+function keywordsFromSubjects(subjects: string[][]): string[] {
+  return (subjects ?? [])
+    .flatMap((s) => s)
+    .map((k) => k.trim())
+    .filter((k) => k.length > 2 && k.length < 100)
+    .slice(0, 10)
+}
+
+function ufmsRepoUrlFromRecord(record: BDTDRecord): string | null {
+  const url = record.urls?.find(
+    (u) => u.url?.includes('repositorio.ufms.br/handle/')
+  )?.url
+  return url ?? null
+}
+
+/**
+ * Fetch Dublin Core metadata from a UFMS DSpace item page.
+ * Pages are server-rendered HTML (no JS required).
+ */
+async function fetchUFMSMeta(
+  repoUrl: string
+): Promise<{ year: number | null; abstract?: string; advisor?: string; keywords: string[] }> {
   try {
-    // Navigate to BDTD search page
-    const searchUrl = `${BDTD_SEARCH_URL}?lookfor=${encodeURIComponent(institution)}&type=AllFields`
-    onProgress?.(`🌐 Navigating to BDTD (5 minute timeout)...`)
-
-    await page.goto(searchUrl, {
-      waitUntil: 'networkidle',
-      timeout: 300000, // 5 minutes
+    const resp = await fetch(repoUrl, {
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        Accept: 'text/html',
+      },
+      signal: AbortSignal.timeout(15_000),
     })
 
-    onProgress?.(`✅ Page loaded`)
+    if (!resp.ok) return { year: null, keywords: [] }
 
-    // Wait for results to load
-    await page.waitForSelector('.result, .no-results', { timeout: 30000 }).catch(() => {})
+    const html = await resp.text()
 
-    // Check if there are no results
-    const noResults = await page.locator('.no-results').count()
-    if (noResults > 0) {
-      onProgress?.(`ℹ️  No results found`)
-      return []
+    // Extract Dublin Core meta tags
+    // Use a simple approach: find name="X" content="Y" with a stable regex
+    const metaMap = new Map<string, string[]>()
+    // Match all meta tags with name + content attributes (DSpace uses double quotes)
+    const metaRe = /<meta\s+name="([^"]+)"\s+content="([^"]+)"/gi
+    let mm: RegExpExecArray | null
+    while ((mm = metaRe.exec(html)) !== null) {
+      const key = mm[1].toLowerCase()
+      const val = mm[2]
+      if (!metaMap.has(key)) metaMap.set(key, [])
+      metaMap.get(key)!.push(val)
     }
 
-    // Extract results from the page
-    const results: BDTDResult[] = []
+    const getMeta = (name: string): string | undefined =>
+      metaMap.get(name.toLowerCase())?.[0]
 
-    // Get all result items
-    const resultItems = await page.locator('.result').all()
-    onProgress?.(`📚 Found ${resultItems.length} result items on page`)
+    const getAllMeta = (name: string): string[] =>
+      metaMap.get(name.toLowerCase()) ?? []
 
-    for (let i = 0; i < resultItems.length; i++) {
-      const item = resultItems[i]
+    const issuedStr = getMeta('DCTERMS.issued') ?? getMeta('DC.date')
+    const yearMatch = issuedStr?.match(/\d{4}/)
+    const year = yearMatch ? parseInt(yearMatch[0], 10) : null
 
-      try {
-        // Extract title
-        const titleEl = item.locator('.result-title, h3 a, .title a').first()
-        const title = await titleEl.textContent().catch(() => '')
+    const abstract = getMeta('DCTERMS.abstract') ?? getMeta('DC.description')
+    const advisor = getMeta('DC.contributor.advisor') ?? getMeta('DC.contributor')
 
-        // Extract author
-        const authorEl = item.locator('.result-author, .author').first()
-        const author = await authorEl.textContent().catch(() => '')
+    const keywords = [
+      ...getAllMeta('DC.subject'),
+      ...getAllMeta('citation_keywords'),
+    ]
+      .flatMap((k) => k.split(/[;,]/))
+      .map((k) => k.trim())
+      .filter((k) => k.length > 2 && k.length < 100)
+      .slice(0, 10)
 
-        // Extract year
-        const yearEl = item.locator('.result-year, .year, .publishDate').first()
-        const yearText = await yearEl.textContent().catch(() => '')
-        const yearMatch = yearText?.match(/\d{4}/)
-        const year = parseInt(yearMatch?.[0] || new Date().getFullYear().toString(), 10)
-
-        // Extract URL
-        const url = await titleEl.getAttribute('href').catch(() => '')
-        const fullUrl = url?.startsWith('http') ? url : `${BDTD_BASE_URL}${url}`
-
-        // Extract institution from result (might be different from search term)
-        const instEl = item.locator('.result-institution, .institution').first()
-        const inst = await instEl.textContent().catch(() => institution)
-
-        if (!title || !author) {
-          continue
-        }
-
-        // Determine degree level from title or context
-        const titleLower = title.toLowerCase()
-        const degreeLevel: DegreeLevel =
-          titleLower.includes('doutorado') || titleLower.includes('doctor') || titleLower.includes('phd')
-            ? 'PHD'
-            : 'MASTERS'
-
-        results.push({
-          name: author.trim(),
-          title: title.trim(),
-          year,
-          institution: (inst || institution).trim(),
-          degreeLevel,
-          url: fullUrl,
-        })
-
-      } catch (error: any) {
-        onProgress?.(`⚠️  Error extracting result ${i + 1}: ${error.message}`)
-      }
-    }
-
-    onProgress?.(`✅ Extracted ${results.length} valid results`)
-
-    return results
-
-  } catch (error: any) {
-    onProgress?.(`❌ ${error.message}`)
-    return []
+    return { year, abstract, advisor, keywords }
+  } catch {
+    return { year: null, keywords: [] }
   }
 }
 
 /**
- * Run BDTD scraper to collect dissertations from MS institutions
+ * Process a batch of records, enriching with UFMS meta concurrently.
  */
-export async function runBdtdScrape(
-  options?: ScraperOptions
-): Promise<ScraperResult> {
+async function enrichBatch(records: BDTDRecord[]): Promise<EnrichedRecord[]> {
+  const results: EnrichedRecord[] = []
+
+  for (let i = 0; i < records.length; i += ENRICH_CONCURRENCY) {
+    const chunk = records.slice(i, i + ENRICH_CONCURRENCY)
+
+    const enriched = await Promise.all(
+      chunk.map(async (record) => {
+        const repoUrl = ufmsRepoUrlFromRecord(record)
+        let meta: Awaited<ReturnType<typeof fetchUFMSMeta>> = {
+          year: null,
+          keywords: [],
+        }
+
+        if (repoUrl) {
+          meta = await fetchUFMSMeta(repoUrl)
+        }
+
+        const baseKeywords = keywordsFromSubjects(record.subjects)
+
+        return {
+          name: authorFromRecord(record),
+          title: record.title,
+          year: meta.year,
+          institution: 'UNIVERSIDADE FEDERAL DE MATO GROSSO DO SUL',
+          degreeLevel: degreeLevelFromFormats(record.formats),
+          advisor: meta.advisor,
+          abstract: meta.abstract,
+          keywords: [...new Set([...baseKeywords, ...meta.keywords])],
+          url: repoUrl ?? record.urls?.[0]?.url,
+        } satisfies EnrichedRecord
+      })
+    )
+
+    results.push(...enriched)
+  }
+
+  return results
+}
+
+async function fetchBDTDPage(
+  institutionCode: string,
+  page: number
+): Promise<{ records: BDTDRecord[]; total: number }> {
+  const params = new URLSearchParams({
+    lookfor: '',
+    type: 'AllFields',
+    limit: String(PAGE_SIZE),
+    page: String(page),
+  })
+  params.append('filter[]', `institution:${institutionCode}`)
+
+  const url = `${BDTD_API}?${params}`
+  const resp = await fetch(url, {
+    headers: { 'User-Agent': 'Mozilla/5.0 Chrome/124' },
+    signal: AbortSignal.timeout(30_000),
+  })
+
+  if (!resp.ok) throw new Error(`BDTD API HTTP ${resp.status}`)
+
+  const data = await resp.json()
+  return {
+    records: (data.records ?? []) as BDTDRecord[],
+    total: data.resultCount ?? 0,
+  }
+}
+
+export async function runBdtdScrape(options?: ScraperOptions): Promise<ScraperResult> {
   const startTime = Date.now()
   let totalCreated = 0
   let totalSkipped = 0
   let totalErrors = 0
+  let totalFetched = 0
   const errorMessages: string[] = []
-
   const onProgress = options?.onProgress
+  const { limit, dryRun } = options ?? {}
 
   try {
-    onProgress?.('🚀 Starting BDTD data collection')
-    onProgress?.(`🏛️  Institutions: ${INSTITUTIONS_MS.length}`)
+    const modeTag = dryRun ? ' [DRY RUN — sem gravação]' : ''
+    onProgress?.(`🚀 BDTD scrape via VuFind API${modeTag}`)
+    if (limit) onProgress?.(`🔢 Limite: ${limit} registros da fonte`)
 
-    const context = await getBrowserContext()
-    const page = await context.newPage()
+    for (const [code, label] of Object.entries(INSTITUTIONS)) {
+      if (options?.signal?.aborted) break
+      if (limit && totalFetched >= limit) break
 
-    for (let i = 0; i < INSTITUTIONS_MS.length; i++) {
-      const institution = INSTITUTIONS_MS[i]
+      onProgress?.(`\n🏛️  ${label} (${code})`)
 
-      // Check for cancellation
-      if (options?.signal?.aborted) {
-        onProgress?.('⏸️  Cancelled by user')
-        break
-      }
+      let page = 1
+      let total = -1
+      let pageFetched = 0
 
-      onProgress?.(`\n[${i + 1}/${INSTITUTIONS_MS.length}] 🏛️  ${institution}`)
+      while (true) {
+        if (options?.signal?.aborted) break
+        if (limit && totalFetched >= limit) break
 
-      try {
-        const startInst = Date.now()
-        const results = await searchBDTD(institution, page, onProgress)
-        const duration = Date.now() - startInst
+        try {
+          const { records, total: batchTotal } = await fetchBDTDPage(code, page)
 
-        onProgress?.(`⏱️  Completed in ${duration}ms`)
+          if (total < 0) {
+            total = batchTotal
+            onProgress?.(`   📊 ${total} records found`)
+          }
 
-        if (results.length === 0) {
-          onProgress?.(`ℹ️  No results`)
-          continue
-        }
+          if (records.length === 0) break
 
-        let created = 0
-        let skipped = 0
+          // Trim batch to respect limit
+          const remaining = limit ? limit - totalFetched : records.length
+          const batch = records.slice(0, remaining)
 
-        onProgress?.(`💾 Saving to database (smart deduplication)...`)
+          onProgress?.(`   📄 Page ${page} (${pageFetched + batch.length}/${total}) — enriching...`)
 
-        for (const result of results) {
-          try {
-            const upsertResult = await upsertAcademicWithDissertation(
-              {
-                name: result.name,
-                institution: result.institution,
-                graduationYear: result.year,
-                degreeLevel: result.degreeLevel,
-              },
-              {
-                title: result.title,
-                defenseYear: result.year,
-                institution: result.institution,
-                abstract: result.abstract,
-                advisorName: result.advisor,
-                sourceUrl: result.url,
-                keywords: [],
-              },
-              {
-                source: 'BDTD',
-                scrapedAt: new Date(),
-              }
-            )
+          const enriched = await enrichBatch(batch)
 
-            if (upsertResult.dissertationCreated) {
-              onProgress?.(`✅ New: ${result.name} (${result.year})`)
-              created++
-              totalCreated++
-            } else {
-              skipped++
+          for (const item of enriched) {
+            if (!item.title || !item.name) continue
+            totalFetched++
+
+            if (dryRun) {
+              onProgress?.(`   👤 ${item.name} | ${item.institution} | ${item.degreeLevel} | ${item.year ?? '?'}`)
+              onProgress?.(`      "${item.title.slice(0, 80)}"`)
+              continue
             }
 
-          } catch (error: any) {
-            totalErrors++
-            const errorMsg = `Failed to save ${result.name}: ${error.message}`
-            errorMessages.push(errorMsg)
-            onProgress?.(`❌ ${errorMsg}`)
+            try {
+              const result = await upsertAcademicWithDissertation(
+                {
+                  name: item.name,
+                  institution: item.institution,
+                  graduationYear: item.year ?? 0,
+                  degreeLevel: item.degreeLevel,
+                },
+                {
+                  title: item.title,
+                  defenseYear: item.year ?? 0,
+                  institution: item.institution,
+                  abstract: item.abstract,
+                  advisorName: item.advisor,
+                  keywords: item.keywords,
+                  sourceUrl: item.url,
+                },
+                { source: 'BDTD', scrapedAt: new Date() }
+              )
+
+              if (result.dissertationCreated) {
+                totalCreated++
+                if (totalCreated % 100 === 0) {
+                  onProgress?.(`   ✅ ${totalCreated} new records saved...`)
+                }
+              } else {
+                totalSkipped++
+              }
+            } catch (err: any) {
+              totalErrors++
+              errorMessages.push(`${item.name}: ${err.message}`)
+            }
           }
-        }
 
-        totalSkipped += skipped
-        onProgress?.(`📈 Batch complete: ${created} new, ${skipped} duplicates`)
+          pageFetched += batch.length
+          page++
 
-        // Rate limiting between institutions
-        if (i < INSTITUTIONS_MS.length - 1) {
-          await new Promise((resolve) => setTimeout(resolve, 3000))
+          if (limit && totalFetched >= limit) break
+          if (pageFetched >= total) break
+
+          // Polite delay between pages
+          await new Promise((r) => setTimeout(r, 500))
+        } catch (err: any) {
+          totalErrors++
+          errorMessages.push(`${code} page ${page}: ${err.message}`)
+          onProgress?.(`   ❌ Page error: ${err.message}`)
+          break
         }
-      } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : 'Unknown'
-        totalErrors++
-        errorMessages.push(`${institution}: ${errorMsg}`)
-        onProgress?.(`❌ ${errorMsg}`)
       }
+
+      if (!dryRun) onProgress?.(`   📈 ${code} done: ${totalCreated} total new`)
     }
 
-    await page.close()
-
-    onProgress?.(`\n🎉 Scraping complete!`)
-    onProgress?.(`📊 Total new academics: ${totalCreated}`)
-    onProgress?.(`⏭️  Total duplicates: ${totalSkipped}`)
-    onProgress?.(`🏛️  Institutions processed: ${INSTITUTIONS_MS.length}`)
-
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : 'Unknown error'
+    if (dryRun) {
+      onProgress?.(`\n✅ Dry run completo — ${totalFetched} registros lidos, nenhum gravado.`)
+    } else {
+      onProgress?.(`\n🎉 BDTD complete!`)
+      onProgress?.(`📊 New: ${totalCreated} | Skipped: ${totalSkipped} | Errors: ${totalErrors}`)
+    }
+  } catch (err: any) {
     totalErrors++
-    errorMessages.push(errorMsg)
-    onProgress?.(`❌ Fatal error: ${errorMsg}`)
-  } finally {
-    // Clean up browser resources
-    if (browserContext) {
-      await browserContext.close().catch(() => {})
-      browserContext = null
-    }
-    if (browser) {
-      await browser.close().catch(() => {})
-      browser = null
-    }
-    onProgress?.('✅ Browser closed')
+    errorMessages.push(err.message)
+    onProgress?.(`❌ Fatal: ${err.message}`)
   }
 
   return {
@@ -298,6 +335,6 @@ export async function runBdtdScrape(
     totalSkipped,
     totalErrors,
     duration: Date.now() - startTime,
-    errorMessages: totalErrors > 0 ? errorMessages : undefined
+    errorMessages: totalErrors > 0 ? errorMessages : undefined,
   }
 }

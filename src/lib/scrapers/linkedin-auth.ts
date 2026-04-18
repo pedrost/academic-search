@@ -1,38 +1,46 @@
 /**
- * LinkedIn Authentication Helper
- *
- * Manages LinkedIn session cookies for the enrichment worker.
+ * LinkedIn session cookie persistence.
+ * Stores cookies to disk so sessions survive server restarts.
+ * Admin must log in once via /admin/browser; cookies are then reused automatically.
  */
 
-import { redis } from '@/lib/queue'
+import fs from 'fs'
+import path from 'path'
 
-const COOKIES_KEY = 'linkedin:cookies'
+const COOKIES_PATH = path.join(process.cwd(), 'data', 'linkedin-cookies.json')
 
-/**
- * Check if we have saved LinkedIn cookies
- */
-export async function hasSavedCookies(): Promise<boolean> {
-  const cookies = await redis.get(COOKIES_KEY)
-  return cookies !== null && cookies !== ''
+export type CookieRecord = {
+  name: string
+  value: string
+  domain: string
+  path: string
+  expires?: number
+  httpOnly?: boolean
+  secure?: boolean
+  sameSite?: 'Strict' | 'Lax' | 'None'
 }
 
-/**
- * Save LinkedIn cookies to Redis
- */
-export async function saveCookies(cookies: string): Promise<void> {
-  await redis.set(COOKIES_KEY, cookies)
+export function hasSavedCookies(): boolean {
+  try {
+    return fs.existsSync(COOKIES_PATH) && fs.statSync(COOKIES_PATH).size > 10
+  } catch {
+    return false
+  }
 }
 
-/**
- * Get saved LinkedIn cookies
- */
-export async function getCookies(): Promise<string | null> {
-  return redis.get(COOKIES_KEY)
+export function loadCookies(): CookieRecord[] {
+  try {
+    return JSON.parse(fs.readFileSync(COOKIES_PATH, 'utf-8'))
+  } catch {
+    return []
+  }
 }
 
-/**
- * Clear saved LinkedIn cookies
- */
-export async function clearCookies(): Promise<void> {
-  await redis.del(COOKIES_KEY)
+export function saveCookies(cookies: CookieRecord[]): void {
+  fs.mkdirSync(path.dirname(COOKIES_PATH), { recursive: true })
+  fs.writeFileSync(COOKIES_PATH, JSON.stringify(cookies, null, 2))
+}
+
+export function clearCookies(): void {
+  try { fs.unlinkSync(COOKIES_PATH) } catch { /* already gone */ }
 }

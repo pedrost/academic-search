@@ -1,4 +1,6 @@
 export { ProfileHeader } from './ProfileHeader'
+export { EnrichmentConfigurator } from './EnrichmentConfigurator'
+export type { EnrichmentConfig, EnrichmentSource } from './EnrichmentConfigurator'
 export { OverviewTab } from './OverviewTab'
 export { TimelineTab } from './TimelineTab'
 export { PublicationsTab } from './PublicationsTab'

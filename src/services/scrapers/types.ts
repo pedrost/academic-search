@@ -6,8 +6,18 @@
  */
 
 export interface ScraperOptions {
-  /** Maximum number of records to process */
+  /**
+   * Max records to fetch from the source.
+   * Counted against source records seen, not DB outcomes —
+   * so limit=10 always means "look at 10 records" regardless of duplicates.
+   */
   limit?: number
+
+  /**
+   * Dry run: fetch and parse real data but never write to the database.
+   * Use to verify connectivity, parsing, and data quality without side effects.
+   */
+  dryRun?: boolean
 
   /** Progress callback for real-time logging */
   onProgress?: (msg: string) => void

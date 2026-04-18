@@ -5,24 +5,32 @@ import { prisma } from '@/lib/db'
 import { freeTierEnrich } from '@/lib/enrichment/free-tier'
 import { apiTierEnrich } from '@/lib/enrichment/api-tier'
 import { aiTierEnrich } from '@/lib/enrichment/ai-tier'
-import { estimateCost, type EnrichmentTier } from '@/lib/enrichment/tier-router'
 import { upsertAcademic } from '@/lib/academic-upsert'
+import { hasSavedCookies } from '@/lib/scrapers/linkedin-auth'
+import type { EnrichmentSource } from '@/components/profile-v2/EnrichmentConfigurator'
 
 type SSEEvent =
   | { phase: 'init'; status: 'start'; message: string }
-  | { phase: 'lattes' | 'linkedin' | 'serpapi' | 'proxycurl' | 'discovery' | 'enrichment'; status: 'start' | 'complete' | 'skipped'; message?: string }
+  | { phase: 'lattes' | 'linkedin' | 'serpapi' | 'proxycurl' | 'discovery' | 'enrichment' | 'saving'; status: 'start' | 'complete' | 'skipped'; message?: string }
   | { phase: 'done'; status: 'success'; academic: any; enrichmentSummary: any }
   | { phase: 'done'; status: 'not_found'; reason: string }
   | { phase: 'error'; status: 'error'; message: string }
+
+const ALL_SOURCES: EnrichmentSource[] = ['lattes', 'linkedin', 'serpapi', 'proxycurl', 'grok']
+
+function parseSources(param: string | null): EnrichmentSource[] {
+  if (!param) return ['lattes', 'linkedin']
+  return param.split(',').filter((s): s is EnrichmentSource => ALL_SOURCES.includes(s as any))
+}
 
 export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams
   const id = params.get('id')
   const name = params.get('name')
-  const tierParam = (params.get('tier') ?? 'AI').toUpperCase() as EnrichmentTier
   const state = params.get('state')
   const city = params.get('city')
   const institution = params.get('institution')
+  const sources = parseSources(params.get('sources'))
 
   if (!id && !name) {
     return new Response(JSON.stringify({ error: 'Provide ?id or ?name' }), {
@@ -31,7 +39,7 @@ export async function GET(request: NextRequest) {
     })
   }
 
-  const tier: EnrichmentTier = ['FREE', 'API', 'AI'].includes(tierParam) ? tierParam : 'AI'
+  const useGrok = sources.includes('grok')
 
   const encoder = new TextEncoder()
   const stream = new ReadableStream({
@@ -52,13 +60,18 @@ export async function GET(request: NextRequest) {
       }, 15000)
 
       try {
-        send({ phase: 'init', status: 'start', message: `Iniciando enriquecimento [${tier}]...` })
+        // ── Pre-flight: validate required sessions/keys ────────────────
+        if (sources.includes('linkedin') && !hasSavedCookies()) {
+          send({ phase: 'error', status: 'error', message: 'LinkedIn selecionado mas nenhuma sessão salva. Faça login em /admin/browser primeiro.' })
+          return
+        }
+
+        send({ phase: 'init', status: 'start', message: `Iniciando enriquecimento [${sources.join(', ')}]...` })
 
         // ── Resolve academic ID ────────────────────────────────────────
         let academicId: string | null = id
 
         if (!academicId && name) {
-          // Try to find existing academic by name (+ context hints)
           const existing = await prisma.academic.findFirst({
             where: {
               name: { contains: name },
@@ -71,44 +84,45 @@ export async function GET(request: NextRequest) {
           academicId = existing?.id ?? null
         }
 
-        // If no existing academic and tier is AI, create a stub record
-        if (!academicId && tier === 'AI' && name) {
+        // Create a stub academic for cold discovery (any tier)
+        if (!academicId && name) {
+          send({ phase: 'saving', status: 'start', message: 'Criando perfil stub...' })
           const result = await upsertAcademic(
             { name: name!, institution: institution ?? '', graduationYear: new Date().getFullYear() },
             { source: 'LINKEDIN', scrapedAt: new Date() }
           )
           academicId = result.id
+          send({ phase: 'saving', status: 'complete', message: `Perfil criado: ${academicId}` })
         }
 
-        if (!academicId && tier !== 'AI') {
-          send({ phase: 'done', status: 'not_found', reason: 'Academic not found in database. Use tier=AI for cold discovery.' })
+        if (!academicId) {
+          send({ phase: 'done', status: 'not_found', reason: 'Nenhum nome informado para busca.' })
           return
         }
 
-        // ── Run enrichment ────────────────────────────────────────────
-        const ctx = { name: name ?? undefined, state: state ?? null, city: city ?? null, institution: institution ?? null }
-        const startMs = Date.now()
+        // ── Run enrichment per source ──────────────────────────────────
+        const onLog = (msg: string) => send({ phase: 'log', status: 'info', message: msg } as any)
+        const ctx = { name: name ?? undefined, state: state ?? null, city: city ?? null, institution: institution ?? null, onLog }
 
         let result: { success: boolean; enrichmentStatus: string; sources: string[]; durationMs: number; academicId?: string }
 
-        if (tier === 'FREE') {
-          send({ phase: 'lattes', status: 'start', message: 'Buscando Lattes via Google...' })
-          result = await freeTierEnrich(academicId!, ctx)
-          send({ phase: 'lattes', status: 'complete' })
-        } else if (tier === 'API') {
-          send({ phase: 'serpapi', status: 'start', message: 'Buscando LinkedIn via SerpAPI...' })
-          result = await apiTierEnrich(academicId!, ctx)
-          send({ phase: 'serpapi', status: 'complete' })
-        } else {
-          send({ phase: 'discovery', status: 'start', message: 'Pesquisando na web (Grok-4)...' })
-          result = await aiTierEnrich(academicId, ctx)
+        const hasFreeSources = sources.includes('lattes') || sources.includes('linkedin')
+        const hasApiSources = sources.includes('serpapi') || sources.includes('proxycurl')
+
+        if (useGrok) {
+          send({ phase: 'discovery', status: 'start', message: 'Pesquisando na web (Grok)...' })
+          result = await aiTierEnrich(academicId, { ...ctx, sources })
           academicId = result.academicId ?? academicId
           send({ phase: 'discovery', status: 'complete' })
-        }
-
-        if (!result.success && result.enrichmentStatus === 'PENDING') {
-          send({ phase: 'done', status: 'not_found', reason: (result as any).error ?? 'Não foi possível encontrar dados para este acadêmico' })
-          return
+        } else if (hasApiSources) {
+          send({ phase: 'serpapi', status: 'start', message: 'Buscando via SerpAPI + Proxycurl...' })
+          result = await apiTierEnrich(academicId!, { ...ctx, sources })
+          send({ phase: 'serpapi', status: 'complete' })
+        } else {
+          // FREE sources (lattes + linkedin) — handled individually
+          send({ phase: 'lattes', status: sources.includes('lattes') ? 'start' : 'skipped', message: 'Buscando Lattes (Scrapling)...' })
+          result = await freeTierEnrich(academicId!, { ...ctx, sources })
+          if (sources.includes('lattes')) send({ phase: 'lattes', status: 'complete' })
         }
 
         const finalAcademic = await prisma.academic.findUnique({
@@ -121,8 +135,6 @@ export async function GET(request: NextRequest) {
           status: 'success',
           academic: finalAcademic,
           enrichmentSummary: {
-            tier,
-            estimatedCost: estimateCost(tier),
             sources: result.sources,
             enrichmentStatus: result.enrichmentStatus,
             durationMs: result.durationMs,

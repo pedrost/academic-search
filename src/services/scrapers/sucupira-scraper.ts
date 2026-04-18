@@ -1,35 +1,79 @@
 /**
  * Sucupira Scraper Service
  *
- * Searches CAPES Open Data API for dissertations/theses from
- * Mato Grosso do Sul institutions and saves to database.
+ * Uses CAPES Open Data CKAN API directly (no browser).
+ * Filters by SG_UF_IES='MS' to capture ALL Mato Grosso do Sul institutions
+ * regardless of name variants (FUNDAÇÃO UNIVERSIDADE... vs UNIVERSIDADE...).
+ *
+ * NOTE: On Windows, Node.js defaults to IPv6 which times out for CAPES API.
+ * We force IPv4-first DNS resolution at module load time.
  */
 
-import { chromium, Browser, BrowserContext } from 'playwright'
+import dns from 'dns'
 import { DegreeLevel } from '@prisma/client'
 import { upsertAcademicWithDissertation } from '@/lib/academic-upsert'
 import type { ScraperOptions, ScraperResult } from './types'
 
-// CAPES Open Data API (CKAN)
-const CAPES_API_BASE = 'https://dadosabertos.capes.gov.br/api/3/action'
+// Force IPv4 — CAPES API's IPv6 address times out from this network
+dns.setDefaultResultOrder('ipv4first')
 
-// Resource IDs for recent thesis/dissertation data (2021-2024)
-const RESOURCE_IDS = {
+const CAPES_API = 'https://dadosabertos.capes.gov.br/api/3/action/datastore_search'
+const BATCH_SIZE = 100
+
+// Resource IDs per year (CAPES Open Data CKAN)
+const RESOURCE_IDS: Record<string, string> = {
   '2024': '87133ba7-ac99-4d87-966e-8f580bc96231',
   '2023': 'b69baf26-8d02-4c10-ba39-7e9ab799e6ed',
   '2022': '78f73608-6f5e-463c-ba79-0bff4f8a578d',
-  '2021': '068003e4-196c-41f4-8c35-1f7c94b4e55c',
 }
 
-// Target institutions in Mato Grosso do Sul
-const INSTITUTIONS_MS = [
-  'UNIVERSIDADE FEDERAL DE MATO GROSSO DO SUL',
-  'UNIVERSIDADE CATÓLICA DOM BOSCO',
-  'UNIVERSIDADE ESTADUAL DE MATO GROSSO DO SUL',
-  'INSTITUTO FEDERAL DE MATO GROSSO DO SUL',
-]
+interface CAPESRecord {
+  NM_DISCENTE?: string
+  NM_PRODUCAO?: string
+  AN_BASE?: string | number
+  NM_ENTIDADE_ENSINO?: string
+  NM_GRAU_ACADEMICO?: string
+  NM_ORIENTADOR?: string
+  DS_RESUMO?: string
+  DS_ABSTRACT?: string
+  DS_PALAVRA_CHAVE?: string
+  DS_KEYWORD?: string
+  NM_AREA_CONHECIMENTO?: string
+  DS_URL_TEXTO_COMPLETO?: string
+  SG_UF_IES?: string
+}
 
-interface SucupiraResult {
+async function fetchCAPESBatch(
+  resourceId: string,
+  offset: number,
+  onProgress?: (msg: string) => void
+): Promise<{ records: CAPESRecord[]; total: number }> {
+  const params = new URLSearchParams({
+    resource_id: resourceId,
+    filters: JSON.stringify({ SG_UF_IES: 'MS' }),
+    limit: String(BATCH_SIZE),
+    offset: String(offset),
+  })
+
+  const url = `${CAPES_API}?${params}`
+
+  const response = await fetch(url, { signal: AbortSignal.timeout(60_000) })
+  if (!response.ok) {
+    throw new Error(`CAPES API HTTP ${response.status}`)
+  }
+
+  const data = await response.json()
+  if (!data.success) {
+    throw new Error(`CAPES API error: ${JSON.stringify(data.error)}`)
+  }
+
+  return {
+    records: data.result?.records ?? [],
+    total: data.result?.total ?? 0,
+  }
+}
+
+function mapCAPESRecord(record: CAPESRecord): {
   name: string
   title: string
   year: number
@@ -39,273 +83,166 @@ interface SucupiraResult {
   abstract?: string
   researchField?: string
   sourceUrl?: string
-  keywords?: string[]
-}
+  keywords: string[]
+} {
+  const degree = (record.NM_GRAU_ACADEMICO ?? '').toLowerCase()
+  const degreeLevel: DegreeLevel =
+    degree.includes('doutorado') || degree.includes('phd') ? 'PHD' : 'MASTERS'
 
-// Shared browser instance for the scrape session
-let browser: Browser | null = null
-let browserContext: BrowserContext | null = null
+  const keywordsRaw = record.DS_PALAVRA_CHAVE ?? record.DS_KEYWORD ?? ''
+  const keywords = keywordsRaw
+    ? keywordsRaw.split(/[,;]/).map((k) => k.trim()).filter(Boolean)
+    : []
 
-async function getBrowserContext(): Promise<BrowserContext> {
-  if (!browser) {
-    try {
-      // Try Chrome first (preferred)
-      browser = await chromium.launch({
-        headless: false,
-        channel: 'chrome',
-      })
-    } catch (chromeError) {
-      try {
-        // Fallback to Chromium
-        browser = await chromium.launch({
-          headless: false,
-        })
-      } catch (chromiumError) {
-        throw new Error('No browser available. Install Chrome or run: npx playwright install chromium')
-      }
-    }
-  }
-
-  if (!browserContext) {
-    browserContext = await browser.newContext({
-      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-    })
-  }
-
-  return browserContext
-}
-
-async function searchCAPESDataStore(
-  institution: string,
-  limit: number,
-  onProgress?: (msg: string) => void
-): Promise<SucupiraResult[]> {
-  onProgress?.(`🌐 Querying CAPES API for ${institution}...`)
-
-  try {
-    const searchUrl = `${CAPES_API_BASE}/datastore_search`
-    const resourceId = RESOURCE_IDS['2024']
-
-    const filters = JSON.stringify({
-      'NM_ENTIDADE_ENSINO': institution
-    })
-
-    const fullUrl = `${searchUrl}?resource_id=${resourceId}&filters=${encodeURIComponent(filters)}&limit=${limit}`
-
-    const context = await getBrowserContext()
-    const page = await context.newPage()
-
-    await page.evaluate((inst) => {
-      document.title = `CAPES Scraper - ${inst}`
-    }, institution).catch(() => {})
-
-    onProgress?.(`🌐 Opening browser (5 minute timeout)...`)
-
-    const response = await page.goto(fullUrl, {
-      waitUntil: 'networkidle',
-      timeout: 300000, // 5 minutes - CAPES server is very slow
-    })
-
-    if (!response || response.status() !== 200) {
-      await page.close()
-      onProgress?.(`❌ HTTP ${response?.status() || 'no response'}`)
-      return []
-    }
-
-    // Extract JSON from page
-    const content = await page.content()
-    const jsonMatch = content.match(/<pre>([\s\S]*?)<\/pre>/)
-
-    if (!jsonMatch) {
-      await page.close()
-      onProgress?.(`❌ Could not extract JSON from response`)
-      return []
-    }
-
-    const data = JSON.parse(jsonMatch[1])
-    await page.close()
-
-    if (!data.success || !data.result?.records) {
-      onProgress?.(`ℹ️  No records for ${institution}`)
-      return []
-    }
-
-    const records = data.result.records
-    onProgress?.(`✅ Found ${records.length} records`)
-
-    // Transform API data to our format
-    const results: SucupiraResult[] = []
-
-    for (const record of records) {
-      const name = record.NM_DISCENTE || 'Unknown'
-      const title = record.NM_PRODUCAO || 'No title'
-      const year = parseInt(record.AN_BASE || new Date().getFullYear(), 10)
-      const inst = record.NM_ENTIDADE_ENSINO || institution
-      const degree = (record.NM_GRAU_ACADEMICO || '').toLowerCase()
-      const advisor = record.NM_ORIENTADOR || undefined
-      const abstract = record.DS_RESUMO || undefined
-      const researchField = record.NM_AREA_CONHECIMENTO || undefined
-      const sourceUrl = record.DS_URL_TEXTO_COMPLETO || undefined
-      const keywordsRaw = record.DS_PALAVRA_CHAVE || ''
-      const keywords = keywordsRaw ? keywordsRaw.split(',').map((k: string) => k.trim()).filter(Boolean) : []
-
-      const degreeLevel = degree.includes('doutorado') || degree.includes('phd') ? 'PHD' : 'MASTERS'
-
-      results.push({
-        name,
-        title,
-        year,
-        institution: inst,
-        degreeLevel,
-        advisor,
-        abstract,
-        researchField,
-        sourceUrl,
-        keywords,
-      })
-    }
-
-    return results
-
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : 'Unknown error'
-    onProgress?.(`❌ ${errorMsg}`)
-    return []
+  return {
+    name: record.NM_DISCENTE ?? 'Unknown',
+    title: record.NM_PRODUCAO ?? 'No title',
+    year: parseInt(String(record.AN_BASE ?? new Date().getFullYear()), 10),
+    institution: record.NM_ENTIDADE_ENSINO ?? 'UFMS',
+    degreeLevel,
+    advisor: record.NM_ORIENTADOR || undefined,
+    abstract: (record.DS_RESUMO ?? record.DS_ABSTRACT) || undefined,
+    researchField: record.NM_AREA_CONHECIMENTO || undefined,
+    sourceUrl: record.DS_URL_TEXTO_COMPLETO || undefined,
+    keywords,
   }
 }
 
-/**
- * Run Sucupira scraper to collect dissertations from MS institutions
- */
-export async function runSucupiraScrape(
-  options?: ScraperOptions
-): Promise<ScraperResult> {
-  const startTime = Date.now()
-  let totalCreated = 0
-  let totalSkipped = 0
-  let totalErrors = 0
-  const errorMessages: string[] = []
-
-  const limit = options?.limit || 100
+async function scrapeYear(
+  year: string,
+  resourceId: string,
+  options: ScraperOptions | undefined,
+  counters: { created: number; skipped: number; errors: number; fetched: number },
+  errorMessages: string[]
+): Promise<void> {
   const onProgress = options?.onProgress
+  const { limit, dryRun } = options ?? {}
 
-  try {
-    onProgress?.('🚀 Starting Sucupira data collection via CAPES Open Data API')
-    onProgress?.(`🏛️  Institutions: ${INSTITUTIONS_MS.length}`)
+  onProgress?.(`\n📅 Year ${year}...`)
 
-    for (let i = 0; i < INSTITUTIONS_MS.length; i++) {
-      const institution = INSTITUTIONS_MS[i]
+  let offset = 0
+  let total = -1
 
-      // Check for cancellation
-      if (options?.signal?.aborted) {
-        onProgress?.('⏸️  Cancelled by user')
-        break
+  while (true) {
+    if (options?.signal?.aborted) {
+      onProgress?.('⏸️  Cancelled')
+      break
+    }
+    if (limit && counters.fetched >= limit) break
+
+    try {
+      const { records, total: batchTotal } = await fetchCAPESBatch(resourceId, offset, onProgress)
+
+      if (total < 0) {
+        total = batchTotal
+        onProgress?.(`   📊 ${total} MS records for ${year}`)
       }
 
-      onProgress?.(`\n[${i + 1}/${INSTITUTIONS_MS.length}] 🏛️  ${institution}`)
+      if (records.length === 0) break
 
-      try {
-        const startInst = Date.now()
-        const results = await searchCAPESDataStore(institution, limit, onProgress)
-        const duration = Date.now() - startInst
+      for (const record of records) {
+        if (limit && counters.fetched >= limit) break
+        if (!record.NM_PRODUCAO || !record.NM_DISCENTE) continue
 
-        onProgress?.(`⏱️  Completed in ${duration}ms`)
+        counters.fetched++
+        const mapped = mapCAPESRecord(record)
 
-        if (results.length === 0) {
-          onProgress?.(`ℹ️  No results`)
+        if (dryRun) {
+          onProgress?.(`   👤 ${mapped.name} | ${mapped.institution} | ${mapped.degreeLevel} | ${mapped.year}`)
+          onProgress?.(`      "${mapped.title.slice(0, 80)}"`)
           continue
         }
 
-        let created = 0
-        let skipped = 0
+        try {
+          const result = await upsertAcademicWithDissertation(
+            {
+              name: mapped.name,
+              institution: mapped.institution,
+              graduationYear: mapped.year,
+              degreeLevel: mapped.degreeLevel,
+              researchField: mapped.researchField,
+            },
+            {
+              title: mapped.title,
+              defenseYear: mapped.year,
+              institution: mapped.institution,
+              abstract: mapped.abstract,
+              advisorName: mapped.advisor,
+              keywords: mapped.keywords,
+              sourceUrl: mapped.sourceUrl,
+            },
+            { source: 'CAPES', scrapedAt: new Date() }
+          )
 
-        onProgress?.(`💾 Saving to database (smart deduplication)...`)
-
-        for (const result of results) {
-          try {
-            const upsertResult = await upsertAcademicWithDissertation(
-              {
-                name: result.name,
-                institution: result.institution,
-                graduationYear: result.year,
-                degreeLevel: result.degreeLevel,
-                researchField: result.researchField || 'UNKNOWN',
-              },
-              {
-                title: result.title,
-                defenseYear: result.year,
-                institution: result.institution,
-                abstract: result.abstract,
-                advisorName: result.advisor,
-                keywords: result.keywords || [],
-                sourceUrl: result.sourceUrl,
-              },
-              {
-                source: 'CAPES',
-                scrapedAt: new Date(),
-              }
-            )
-
-            if (upsertResult.dissertationCreated) {
-              onProgress?.(`✅ New: ${result.name} (${result.year})`)
-              created++
-              totalCreated++
-            } else {
-              skipped++
+          if (result.dissertationCreated) {
+            counters.created++
+            if (counters.created % 50 === 0) {
+              onProgress?.(`   ✅ ${counters.created} new so far...`)
             }
-
-          } catch (error: any) {
-            totalErrors++
-            const errorMsg = `Failed to save ${result.name}: ${error.message}`
-            errorMessages.push(errorMsg)
-            onProgress?.(`❌ ${errorMsg}`)
+          } else {
+            counters.skipped++
           }
+        } catch (err: any) {
+          counters.errors++
+          errorMessages.push(`${record.NM_DISCENTE}: ${err.message}`)
         }
-
-        totalSkipped += skipped
-        onProgress?.(`📈 Batch complete: ${created} new, ${skipped} duplicates`)
-
-        // Rate limiting between institutions
-        if (i < INSTITUTIONS_MS.length - 1) {
-          await new Promise((resolve) => setTimeout(resolve, 2000))
-        }
-      } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : 'Unknown'
-        totalErrors++
-        errorMessages.push(`${institution}: ${errorMsg}`)
-        onProgress?.(`❌ ${errorMsg}`)
       }
+
+      offset += BATCH_SIZE
+      if (limit && counters.fetched >= limit) break
+      if (offset >= total) break
+
+      // Small delay to avoid hammering CAPES API
+      await new Promise((r) => setTimeout(r, 300))
+    } catch (err: any) {
+      onProgress?.(`   ❌ Batch error at offset ${offset}: ${err.message}`)
+      counters.errors++
+      errorMessages.push(`Year ${year} offset ${offset}: ${err.message}`)
+      break
+    }
+  }
+
+  if (!dryRun) onProgress?.(`   📈 ${year} done: ${counters.created} new (running total)`)
+}
+
+export async function runSucupiraScrape(options?: ScraperOptions): Promise<ScraperResult> {
+  const startTime = Date.now()
+  const counters = { created: 0, skipped: 0, errors: 0, fetched: 0 }
+  const errorMessages: string[] = []
+  const onProgress = options?.onProgress
+
+  try {
+    const modeTag = options?.dryRun ? ' [DRY RUN — sem gravação]' : ''
+    onProgress?.(`🚀 Sucupira scrape via CAPES Open Data API${modeTag}`)
+    onProgress?.(`📌 State filter: SG_UF_IES=MS (all Mato Grosso do Sul institutions)`)
+    if (options?.limit) onProgress?.(`🔢 Limite: ${options.limit} registros da fonte`)
+    onProgress?.(`📅 Years: ${Object.keys(RESOURCE_IDS).join(', ')}`)
+
+    for (const [year, resourceId] of Object.entries(RESOURCE_IDS)) {
+      if (options?.signal?.aborted) break
+      if (options?.limit && counters.fetched >= options.limit) break
+
+      await scrapeYear(year, resourceId, options, counters, errorMessages)
     }
 
-    onProgress?.(`\n🎉 Scraping complete!`)
-    onProgress?.(`📊 Total new academics: ${totalCreated}`)
-    onProgress?.(`⏭️  Total duplicates: ${totalSkipped}`)
-    onProgress?.(`🏛️  Institutions processed: ${INSTITUTIONS_MS.length}`)
-
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : 'Unknown error'
-    totalErrors++
-    errorMessages.push(errorMsg)
-    onProgress?.(`❌ Fatal error: ${errorMsg}`)
-  } finally {
-    // Clean up browser resources
-    if (browserContext) {
-      await browserContext.close().catch(() => {})
-      browserContext = null
+    if (options?.dryRun) {
+      onProgress?.(`\n✅ Dry run completo — ${counters.fetched} registros lidos, nenhum gravado.`)
+    } else {
+      onProgress?.(`\n🎉 Complete!`)
+      onProgress?.(`📊 New: ${counters.created} | Skipped: ${counters.skipped} | Errors: ${counters.errors}`)
     }
-    if (browser) {
-      await browser.close().catch(() => {})
-      browser = null
-    }
-    onProgress?.('✅ Browser closed')
+  } catch (err: any) {
+    counters.errors++
+    errorMessages.push(err.message)
+    onProgress?.(`❌ Fatal: ${err.message}`)
   }
 
   return {
-    success: totalErrors === 0,
-    totalCreated,
-    totalSkipped,
-    totalErrors,
+    success: counters.errors === 0,
+    totalCreated: counters.created,
+    totalSkipped: counters.skipped,
+    totalErrors: counters.errors,
     duration: Date.now() - startTime,
-    errorMessages: totalErrors > 0 ? errorMessages : undefined
+    errorMessages: counters.errors > 0 ? errorMessages : undefined,
   }
 }

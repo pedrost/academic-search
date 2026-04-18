@@ -33,17 +33,11 @@ export async function runLinkedinEnrichment(
     onProgress?.('🚀 Starting LinkedIn enrichment')
 
     // Initialize LinkedIn session
-    const { page, isNew } = await initLinkedInSession()
+    const sessionResult = await initLinkedInSession()
 
-    if (isNew) {
-      onProgress?.('🌐 LinkedIn session initialized')
-    }
-
-    // Check authentication
-    const isLoggedIn = await checkLinkedInLoginStatus()
-    if (!isLoggedIn) {
-      errorMessages.push('Not logged in to LinkedIn')
-      onProgress?.('❌ Not logged in to LinkedIn. Please authenticate via admin panel.')
+    if ('isLoggedIn' in sessionResult) {
+      errorMessages.push('No saved LinkedIn cookies')
+      onProgress?.('❌ No saved LinkedIn session. Please log in via /admin/browser.')
       return {
         success: false,
         totalCreated: 0,

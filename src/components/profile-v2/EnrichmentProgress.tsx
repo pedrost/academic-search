@@ -1,174 +1,159 @@
 'use client'
 
-import { Modal, ModalContent, ModalBody, Progress } from '@nextui-org/react'
-import { motion, AnimatePresence } from 'framer-motion'
-import { Search, Linkedin, Building2, CheckCircle2, Sparkles, AlertCircle } from 'lucide-react'
+import { useRef, useEffect, useState, useMemo } from 'react'
+import { Modal, ModalContent, ModalBody, Button } from '@nextui-org/react'
+import { X, CheckCircle2, XCircle, Terminal } from 'lucide-react'
 
-export type EnrichmentPhase = 'search' | 'linkedin' | 'save'
+// Keep phase type exported for page.tsx event handling
+export type EnrichmentPhase = 'init' | 'lattes' | 'linkedin' | 'serpapi' | 'proxycurl' | 'discovery' | 'enrichment' | 'search' | 'save'
 
+// Unused now but kept for backwards compat with page.tsx state
 export type EnrichmentStep = {
   phase: EnrichmentPhase
   status: 'pending' | 'active' | 'complete' | 'skipped'
   message?: string
 }
 
+export type TerminalLine = {
+  text: string
+  type: 'command' | 'info' | 'success' | 'error' | 'dim' | 'warn'
+}
+
 type Props = {
   isOpen: boolean
   academicName: string
-  steps: EnrichmentStep[]
+  lines: TerminalLine[]
+  isDone: boolean
   error?: string | null
+  onClose?: () => void
+  onCancel?: () => void
 }
 
-const phaseConfig: Record<EnrichmentPhase, { label: string; description: string; icon: typeof Search }> = {
-  search: {
-    label: 'Buscando informações',
-    description: 'Pesquisando dados profissionais públicos...',
-    icon: Search,
-  },
-  linkedin: {
-    label: 'Extraindo LinkedIn',
-    description: 'Coletando histórico de carreira e educação...',
-    icon: Linkedin,
-  },
-  save: {
-    label: 'Salvando resultados',
-    description: 'Atualizando perfil com dados encontrados...',
-    icon: Building2,
-  },
+function useElapsedTime(running: boolean) {
+  const [elapsed, setElapsed] = useState(0)
+  const startRef = useRef(0)
+
+  useEffect(() => {
+    if (!running) return
+    startRef.current = Date.now()
+    setElapsed(0)
+    const id = setInterval(() => setElapsed(Date.now() - startRef.current), 1000)
+    return () => clearInterval(id)
+  }, [running])
+
+  const secs = Math.floor(elapsed / 1000)
+  return secs < 60 ? `${secs}s` : `${Math.floor(secs / 60)}m${String(secs % 60).padStart(2, '0')}s`
 }
 
-export function EnrichmentProgress({ isOpen, academicName, steps, error }: Props) {
-  const completedCount = steps.filter(s => s.status === 'complete' || s.status === 'skipped').length
-  const totalProgress = steps.length > 0 ? (completedCount / steps.length) * 100 : 0
+const LINE_COLORS: Record<TerminalLine['type'], string> = {
+  command: 'text-violet-400',
+  info:    'text-gray-300',
+  success: 'text-green-400',
+  error:   'text-red-400',
+  warn:    'text-yellow-400',
+  dim:     'text-gray-500',
+}
+
+export function EnrichmentProgress({ isOpen, academicName, lines, isDone, error, onClose, onCancel }: Props) {
+  const isRunning = isOpen && !isDone && !error
+  const elapsed = useElapsedTime(isRunning)
+  const scrollRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
+  }, [lines.length])
+
+  const statusColor = error ? 'text-red-400' : isDone ? 'text-green-400' : 'text-gray-400'
+  const statusIcon = error ? '●' : isDone ? '●' : '◍'
 
   return (
     <Modal
       isOpen={isOpen}
-      hideCloseButton
-      isDismissable={false}
-      size="lg"
+      hideCloseButton={isRunning}
+      isDismissable={!isRunning}
+      onClose={onClose}
+      size="2xl"
       placement="center"
       classNames={{
-        backdrop: 'bg-black/60 backdrop-blur-sm',
-        base: 'bg-white shadow-2xl',
+        backdrop: 'bg-black/70 backdrop-blur-sm',
+        base: 'bg-[#1a1b26] shadow-2xl border border-gray-800 rounded-xl overflow-hidden',
       }}
     >
       <ModalContent>
-        <ModalBody className="py-8 px-6">
-          <div className="text-center mb-6">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary-100 mb-4">
-              <Sparkles className="w-8 h-8 text-primary-600 animate-pulse" />
+        <ModalBody className="p-0">
+
+          {/* Title bar */}
+          <div className="flex items-center gap-3 px-4 py-3 bg-[#13141c] border-b border-gray-800">
+            <Terminal className="w-4 h-4 text-gray-500" />
+            <div className="flex-1 min-w-0">
+              <span className="text-sm text-gray-300 font-medium">enrich</span>
+              <span className="text-sm text-gray-600 ml-2">— {academicName}</span>
             </div>
-            <h3 className="text-xl font-bold text-default-900">
-              Enriquecendo Perfil
-            </h3>
-            <p className="text-sm text-default-500 mt-1">
-              {academicName}
-            </p>
+            <span className={`text-xs font-mono ${statusColor}`}>{statusIcon}</span>
+            <span className="text-xs text-gray-600 font-mono tabular-nums">{elapsed}</span>
+            {!isRunning && onClose && (
+              <button type="button" onClick={onClose} className="text-gray-500 hover:text-gray-300 transition-colors">
+                <X className="w-4 h-4" />
+              </button>
+            )}
           </div>
 
-          <Progress
-            aria-label="Progresso geral"
-            value={totalProgress}
-            className="mb-6"
-            classNames={{
-              indicator: 'bg-gradient-to-r from-primary-500 to-violet-500',
-              track: 'bg-default-100',
-            }}
-          />
+          {/* Terminal body */}
+          <div
+            ref={scrollRef}
+            className="font-mono text-[13px] leading-relaxed p-4 min-h-[200px] max-h-[420px] overflow-y-auto scrollbar-thin"
+          >
+            {lines.map((line, i) => (
+              <div key={i} className={`${LINE_COLORS[line.type]} py-[1px] whitespace-pre-wrap break-words`}>
+                {line.text}
+              </div>
+            ))}
 
-          <div className="space-y-3">
-            {steps.map((step, index) => {
-              const config = phaseConfig[step.phase]
-              const StepIcon = config.icon
-              const isActive = step.status === 'active'
-              const isComplete = step.status === 'complete'
-              const isSkipped = step.status === 'skipped'
-              const isPending = step.status === 'pending'
+            {/* Blinking cursor while running */}
+            {isRunning && (
+              <span className="inline-block w-2 h-4 bg-gray-400 animate-pulse ml-0.5 mt-1" />
+            )}
+          </div>
 
-              return (
-                <motion.div
-                  key={step.phase}
-                  initial={{ opacity: 0, x: -10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: index * 0.1 }}
-                  className={`
-                    flex items-center gap-4 p-3 rounded-xl transition-all duration-300
-                    ${isActive ? 'bg-primary-50 border border-primary-200' : ''}
-                    ${isComplete ? 'bg-success-50' : ''}
-                    ${isSkipped ? 'bg-default-50' : ''}
-                    ${isPending ? 'opacity-50' : ''}
-                  `}
+          {/* Bottom bar */}
+          <div className="flex items-center justify-between px-4 py-2.5 bg-[#13141c] border-t border-gray-800">
+            <div className="flex items-center gap-2 text-xs">
+              {error ? (
+                <span className="flex items-center gap-1.5 text-red-400">
+                  <XCircle className="w-3.5 h-3.5" /> Erro
+                </span>
+              ) : isDone ? (
+                <span className="flex items-center gap-1.5 text-green-400">
+                  <CheckCircle2 className="w-3.5 h-3.5" /> Concluído
+                </span>
+              ) : (
+                <span className="text-gray-500">{lines.length} linhas</span>
+              )}
+            </div>
+            <div className="flex gap-2">
+              {isRunning && onCancel && (
+                <Button
+                  size="sm"
+                  variant="flat"
+                  className="bg-red-500/10 text-red-400 hover:bg-red-500/20 h-7 text-xs min-w-0 px-3"
+                  onPress={onCancel}
                 >
-                  <div
-                    className={`
-                      w-10 h-10 rounded-full flex items-center justify-center shrink-0 transition-colors
-                      ${isActive ? 'bg-primary-500 text-white' : ''}
-                      ${isComplete ? 'bg-success-500 text-white' : ''}
-                      ${isSkipped ? 'bg-default-300 text-white' : ''}
-                      ${isPending ? 'bg-default-100 text-default-400' : ''}
-                    `}
-                  >
-                    {isActive ? (
-                      <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    ) : isComplete ? (
-                      <CheckCircle2 className="w-5 h-5" />
-                    ) : (
-                      <StepIcon className="w-5 h-5" />
-                    )}
-                  </div>
-
-                  <div className="flex-1 min-w-0">
-                    <p
-                      className={`
-                        font-medium text-sm
-                        ${isActive ? 'text-primary-700' : ''}
-                        ${isComplete ? 'text-success-700' : ''}
-                        ${isSkipped ? 'text-default-400' : ''}
-                        ${isPending ? 'text-default-400' : ''}
-                      `}
-                    >
-                      {config.label}
-                      {isSkipped && ' (pulado)'}
-                    </p>
-                    <AnimatePresence>
-                      {isActive && (
-                        <motion.p
-                          initial={{ opacity: 0, height: 0 }}
-                          animate={{ opacity: 1, height: 'auto' }}
-                          exit={{ opacity: 0, height: 0 }}
-                          className="text-xs text-default-500 mt-0.5"
-                        >
-                          {step.message || config.description}
-                        </motion.p>
-                      )}
-                      {isComplete && step.message && (
-                        <motion.p
-                          initial={{ opacity: 0, height: 0 }}
-                          animate={{ opacity: 1, height: 'auto' }}
-                          exit={{ opacity: 0, height: 0 }}
-                          className="text-xs text-success-600 mt-0.5"
-                        >
-                          {step.message}
-                        </motion.p>
-                      )}
-                    </AnimatePresence>
-                  </div>
-                </motion.div>
-              )
-            })}
+                  Ctrl+C
+                </Button>
+              )}
+              {(isDone || error) && onClose && (
+                <Button
+                  size="sm"
+                  variant="flat"
+                  className="bg-gray-700/50 text-gray-300 hover:bg-gray-700 h-7 text-xs min-w-0 px-3"
+                  onPress={onClose}
+                >
+                  Fechar
+                </Button>
+              )}
+            </div>
           </div>
 
-          {error ? (
-            <div className="flex items-center gap-2 mt-4 p-3 bg-danger-50 rounded-xl border border-danger-200">
-              <AlertCircle className="w-5 h-5 text-danger-500 shrink-0" />
-              <p className="text-sm text-danger-700">{error}</p>
-            </div>
-          ) : (
-            <p className="text-xs text-center text-default-400 mt-6">
-              Este processo pode levar alguns minutos
-            </p>
-          )}
         </ModalBody>
       </ModalContent>
     </Modal>

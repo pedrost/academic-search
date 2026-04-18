@@ -3,32 +3,23 @@
  *
  * Pipeline:
  *   1. Lattes (Google → ID → CV fetch) — primary, free, no CAPTCHA
- *   2. LinkedIn Playwright (real session) — fallback for employment gaps
- *
- * Human-likeness strategy:
- *   - Real LinkedIn credentials stored in Redis (admin sets via /admin/linkedin)
- *   - 15–30s random delays between LinkedIn profile views
- *   - Max 50 LinkedIn profiles per session then 2h cool-down
- *   - Stop immediately on LinkedIn /checkpoint/ redirect
- *   - Session cookie refresh is admin's responsibility (LOGIN_EXPIRED task created)
+ *   2. LinkedIn Voyager API — fallback for employment gaps (no browser needed,
+ *      uses saved session cookies from admin login at /admin/browser)
  */
 
 import { prisma } from '@/lib/db'
 import { lookupLattes } from '@/lib/scrapers/lattes'
-import {
-  initLinkedInSession,
-  checkLinkedInLoginStatus,
-  searchLinkedIn,
-  extractProfileDetails,
-} from '@/lib/scrapers/linkedin'
+import { hasSavedCookies } from '@/lib/scrapers/linkedin-auth'
+import { voyagerSearchPeople, voyagerGetProfileDetails } from '@/lib/scrapers/linkedin-voyager'
 import { createTask } from '@/lib/db/tasks'
-import { randomDelay } from '@/lib/scrapers/browser'
 
 export interface EnrichmentContext {
-  name?: string          // use when academic not yet in DB
+  name?: string
   state?: string | null
   city?: string | null
   institution?: string | null
+  onLog?: (msg: string) => void
+  sources?: string[]  // which sources to use; defaults to ['lattes', 'linkedin']
 }
 
 export interface FreeTierResult {
@@ -39,12 +30,7 @@ export interface FreeTierResult {
   error?: string
 }
 
-// Track LinkedIn session usage to enforce the 50-profile cap
-let linkedInProfilesThisSession = 0
-let linkedInSessionPausedUntil: number | null = null
 
-const LINKEDIN_SESSION_CAP = 50
-const LINKEDIN_SESSION_COOLDOWN_MS = 2 * 60 * 60 * 1000 // 2 hours
 
 function nameSimilarity(a: string, b: string): number {
   const normalize = (s: string) =>
@@ -77,17 +63,28 @@ export async function freeTierEnrich(
   const institution = ctx.institution ?? academic.institution
   const state = ctx.state ?? academic.currentState
   const city = ctx.city ?? academic.currentCity
+  const { onLog } = ctx
+  const enabledSources = ctx.sources ?? ['lattes', 'linkedin']
+  const useLattes = enabledSources.includes('lattes')
+  const useLinkedIn = enabledSources.includes('linkedin')
 
   // ── Phase 1: CNPq Lattes ────────────────────────────────────────────
   let lattesData = null
-  try {
-    lattesData = await lookupLattes(name, { institution, state, city })
-  } catch (err) {
-    console.error(`[FREE] Lattes lookup failed for ${name}:`, err)
+  if (useLattes) {
+    try {
+      onLog?.(`[FREE] Iniciando busca Lattes para "${name}"`)
+      lattesData = await lookupLattes(name, { institution, state, city }, onLog)
+    } catch (err) {
+      onLog?.(`[FREE] Erro na busca Lattes: ${err instanceof Error ? err.message : String(err)}`)
+      console.error(`[FREE] Lattes lookup failed for ${name}:`, err)
+    }
+  } else {
+    onLog?.(`[FREE] Lattes desativado`)
   }
 
   const lattesUpdate: Record<string, unknown> = {}
   if (lattesData) {
+    onLog?.(`[FREE] Lattes encontrado — nome: ${lattesData.name}, grau: ${lattesData.highestDegree ?? '?'}, emprego: ${lattesData.currentEmployment?.company ?? 'não informado'}`)
     sources.push('lattes')
     lattesUpdate.lattesId = lattesData.lattesId
     lattesUpdate.lattesUrl = lattesData.lattesUrl
@@ -117,9 +114,16 @@ export async function freeTierEnrich(
   const afterLattes = await prisma.academic.findUnique({ where: { id: academicId } })
   const needsEmployment = !afterLattes?.currentCompany && !afterLattes?.currentJobTitle
 
-  // ── Phase 2: LinkedIn (only if employment still unknown) ─────────────
-  if (needsEmployment) {
-    const linkedInData = await enrichFromLinkedIn(academicId, name, { institution, state }, sources)
+  // ── Phase 2: LinkedIn Voyager ──────────────────────────────────────
+  if (!useLinkedIn) {
+    onLog?.(`[FREE] LinkedIn desativado`)
+  } else if (!needsEmployment) {
+    onLog?.(`[FREE] Emprego já preenchido — LinkedIn ignorado`)
+  } else if (!hasSavedCookies()) {
+    onLog?.(`[FREE] LinkedIn ignorado — nenhuma sessão salva (faça login via /admin/browser)`)
+  } else {
+    onLog?.(`[FREE] Buscando LinkedIn via Voyager API...`)
+    const linkedInData = await enrichFromLinkedIn(academicId, name, { institution, state }, sources, onLog)
     if (linkedInData) sources.push('linkedin')
   }
 
@@ -146,57 +150,67 @@ export async function freeTierEnrich(
   }
 }
 
+/**
+ * Shorten verbose institution names for LinkedIn search queries.
+ * LinkedIn search works best with short keywords; full legal names
+ * like "FUNDAÇÃO UNIVERSIDADE FEDERAL DE MATO GROSSO DO SUL" return 0 results.
+ */
+const INSTITUTION_ABBREVIATIONS: Record<string, string> = {
+  'FUNDAÇÃO UNIVERSIDADE FEDERAL DE MATO GROSSO DO SUL': 'UFMS',
+  'UNIVERSIDADE FEDERAL DE MATO GROSSO DO SUL': 'UFMS',
+  'UNIVERSIDADE CATÓLICA DOM BOSCO': 'UCDB',
+  'UNIVERSIDADE ESTADUAL DE MATO GROSSO DO SUL': 'UEMS',
+  'INSTITUTO FEDERAL DE MATO GROSSO DO SUL': 'IFMS',
+  'UNIVERSIDADE FEDERAL DA GRANDE DOURADOS': 'UFGD',
+  'UNIVERSIDADE ANHANGUERA-UNIDERP': 'UNIDERP',
+}
+
+function shortenInstitution(institution: string): string {
+  const upper = institution.toUpperCase().trim()
+  for (const [full, abbr] of Object.entries(INSTITUTION_ABBREVIATIONS)) {
+    if (upper.includes(full)) return abbr
+  }
+  // If still too long (>30 chars), take first 3 words
+  if (institution.length > 30) {
+    return institution.split(/\s+/).slice(0, 3).join(' ')
+  }
+  return institution
+}
+
 async function enrichFromLinkedIn(
   academicId: string,
   name: string,
   context: { institution?: string | null; state?: string | null },
-  sources: string[]
+  sources: string[],
+  onLog?: (msg: string) => void
 ): Promise<boolean> {
-  // Enforce session cap
-  if (linkedInSessionPausedUntil && Date.now() < linkedInSessionPausedUntil) {
-    console.log(`[FREE] LinkedIn session on cool-down until ${new Date(linkedInSessionPausedUntil).toISOString()}`)
-    return false
-  }
-  if (linkedInProfilesThisSession >= LINKEDIN_SESSION_CAP) {
-    linkedInSessionPausedUntil = Date.now() + LINKEDIN_SESSION_COOLDOWN_MS
-    linkedInProfilesThisSession = 0
-    console.log('[FREE] LinkedIn session cap reached — cooling down 2h')
-    return false
-  }
-
   try {
-    const { isNew } = await initLinkedInSession()
-    if (isNew) await randomDelay(3000, 6000)
+    const rawInst = context.institution && context.institution !== 'UNKNOWN' ? context.institution : ''
+    const inst = rawInst ? shortenInstitution(rawInst) : ''
+    const rawState = context.state && context.state !== 'UNKNOWN' ? context.state : ''
+    const query = `${name}${inst ? ` ${inst}` : ''}${rawState ? ` ${rawState}` : ''}`
+    onLog?.(`[LinkedIn] Buscando via Voyager API: "${query}"`)
 
-    const isLoggedIn = await checkLinkedInLoginStatus()
-    if (!isLoggedIn) {
-      // Create a task for the admin to refresh the session
-      await createTask('LOGIN_EXPIRED', undefined, { source: 'linkedin', message: 'LinkedIn session expired during FREE tier enrichment' })
-      console.warn('[FREE] LinkedIn session expired — LOGIN_EXPIRED task created')
+    const profiles = await voyagerSearchPeople(query)
+    onLog?.(`[LinkedIn] ${profiles.length} perfis encontrados`)
+
+    if (profiles.length === 0) {
+      onLog?.(`[LinkedIn] Nenhum perfil encontrado`)
       return false
     }
 
-    // Human-like: wait before searching
-    await randomDelay(15000, 30000)
+    const scored = profiles.map(p => ({ profile: p, score: nameSimilarity(name, p.name) }))
+    const best = scored.filter(({ score }) => score >= 0.7).sort((a, b) => b.score - a.score)[0]
 
-    const query = `${name}${context.institution ? ` ${context.institution}` : ''}${context.state ? ` ${context.state}` : ''}`
-    const profiles = await searchLinkedIn(query)
+    if (!best) {
+      onLog?.(`[LinkedIn] ${profiles.length} resultados mas nenhum com similaridade ≥70% para "${name}"`)
+      return false
+    }
 
-    if (profiles.length === 0) return false
+    onLog?.(`[LinkedIn] Match: "${best.profile.name}" (${Math.round(best.score * 100)}%) — ${best.profile.profileUrl}`)
+    onLog?.(`[LinkedIn] Buscando detalhes do perfil...`)
 
-    // Score candidates — require >70% name match to avoid false positives
-    const best = profiles
-      .map(p => ({ profile: p, score: nameSimilarity(name, p.name) }))
-      .filter(({ score }) => score >= 0.7)
-      .sort((a, b) => b.score - a.score)[0]
-
-    if (!best) return false
-
-    // Human-like: pause before opening profile
-    await randomDelay(8000, 20000)
-
-    linkedInProfilesThisSession++
-    const details = await extractProfileDetails(best.profile.profileUrl)
+    const details = await voyagerGetProfileDetails(best.profile.profileUrl)
 
     await prisma.academic.update({
       where: { id: academicId },
@@ -207,23 +221,15 @@ async function enrichFromLinkedIn(
       },
     })
 
+    onLog?.(`[LinkedIn] Salvo — ${details.currentTitle ?? '?'} @ ${details.currentCompany ?? '?'}`)
     return true
   } catch (err: any) {
-    // If redirected to checkpoint, stop the session
-    if (err.message?.includes('checkpoint') || err.message?.includes('authwall')) {
-      linkedInSessionPausedUntil = Date.now() + LINKEDIN_SESSION_COOLDOWN_MS
-      linkedInProfilesThisSession = 0
-      await createTask('LOGIN_EXPIRED', undefined, { source: 'linkedin', message: `LinkedIn checkpoint hit: ${err.message}` })
-      console.warn('[FREE] LinkedIn checkpoint detected — session paused')
+    if (err.message === 'linkedin_auth_expired') {
+      await createTask('LOGIN_EXPIRED', undefined, { source: 'linkedin', message: 'LinkedIn session expired — re-login at /admin/browser' })
+      onLog?.(`[LinkedIn] Sessão expirada — faça login novamente em /admin/browser`)
     } else {
-      console.error('[FREE] LinkedIn enrichment error:', err.message)
+      onLog?.(`[LinkedIn] Erro: ${err.message}`)
     }
     return false
   }
-}
-
-/** Reset the LinkedIn session counter (call after admin refreshes session) */
-export function resetLinkedInSessionCounter(): void {
-  linkedInProfilesThisSession = 0
-  linkedInSessionPausedUntil = null
 }

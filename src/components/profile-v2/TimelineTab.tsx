@@ -1,6 +1,5 @@
 'use client'
 
-import { Card, CardBody, Chip, CheckboxGroup, Checkbox } from '@nextui-org/react'
 import { GraduationCap, FileText, Building2, Award } from 'lucide-react'
 import { useState } from 'react'
 import { motion } from 'framer-motion'
@@ -27,32 +26,16 @@ const eventIcons = {
   award: Award,
 }
 
-const eventColors = {
-  degree: 'secondary',
-  dissertation: 'primary',
-  employment: 'success',
-  award: 'warning',
-} as const
-
-// Fixed Tailwind classes for each event type (dynamic classes don't work)
-const eventBgClasses = {
-  degree: 'bg-secondary-100',
-  dissertation: 'bg-primary-100',
-  employment: 'bg-success-100',
-  award: 'bg-warning-100',
-}
-
-const eventIconClasses = {
-  degree: 'text-secondary-600',
-  dissertation: 'text-primary-600',
-  employment: 'text-success-600',
-  award: 'text-warning-600',
+const eventAccent = {
+  degree: { dot: 'bg-violet-400', icon: 'text-violet-400', bg: 'bg-violet-500/15', label: 'Formação' },
+  dissertation: { dot: 'bg-cyan-400', icon: 'text-cyan-400', bg: 'bg-cyan-500/15', label: 'Dissertação' },
+  employment: { dot: 'bg-green-400', icon: 'text-green-400', bg: 'bg-green-500/15', label: 'Emprego' },
+  award: { dot: 'bg-yellow-400', icon: 'text-yellow-400', bg: 'bg-yellow-500/15', label: 'Prêmio' },
 }
 
 function buildTimeline(academic: AcademicWithDissertations): TimelineEvent[] {
   const events: TimelineEvent[] = []
 
-  // Degree completion
   if (academic.graduationYear && academic.degreeLevel) {
     events.push({
       id: 'degree-' + academic.id,
@@ -64,7 +47,6 @@ function buildTimeline(academic: AcademicWithDissertations): TimelineEvent[] {
     })
   }
 
-  // Dissertations
   academic.dissertations.forEach((diss) => {
     events.push({
       id: 'diss-' + diss.id,
@@ -76,14 +58,10 @@ function buildTimeline(academic: AcademicWithDissertations): TimelineEvent[] {
     })
   })
 
-  // Employment history (from grokMetadata if available)
   const grokData = academic.grokMetadata as Record<string, unknown> | null
   if (grokData?.employmentHistory && Array.isArray(grokData.employmentHistory)) {
     const employmentHistory = grokData.employmentHistory as Array<{
-      year?: number
-      jobTitle?: string
-      company?: string
-      location?: string
+      year?: number; jobTitle?: string; company?: string; location?: string
     }>
     employmentHistory.forEach((job, i) => {
       events.push({
@@ -97,7 +75,6 @@ function buildTimeline(academic: AcademicWithDissertations): TimelineEvent[] {
     })
   }
 
-  // Current employment (if not already added from grokMetadata)
   if (academic.currentJobTitle && !grokData?.employmentHistory) {
     events.push({
       id: 'current-job',
@@ -109,7 +86,6 @@ function buildTimeline(academic: AcademicWithDissertations): TimelineEvent[] {
     })
   }
 
-  // Sort by year descending, null years at top
   return events.sort((a, b) => {
     if (a.year === null && b.year === null) return 0
     if (a.year === null) return -1
@@ -120,16 +96,12 @@ function buildTimeline(academic: AcademicWithDissertations): TimelineEvent[] {
 
 export function TimelineTab({ academic }: Props) {
   const [visibleTypes, setVisibleTypes] = useState<string[]>([
-    'degree',
-    'dissertation',
-    'employment',
-    'award',
+    'degree', 'dissertation', 'employment', 'award',
   ])
 
   const allEvents = buildTimeline(academic)
   const events = allEvents.filter((e) => visibleTypes.includes(e.type))
 
-  // Group events by year
   const groupedEvents: Record<string, TimelineEvent[]> = {}
   events.forEach((event) => {
     const key = event.year?.toString() || 'Atual'
@@ -143,62 +115,61 @@ export function TimelineTab({ academic }: Props) {
     return parseInt(b) - parseInt(a)
   })
 
+  const toggleType = (type: string) => {
+    setVisibleTypes(prev =>
+      prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]
+    )
+  }
+
   return (
     <div className="space-y-5">
       {/* Filters */}
-      <Card className="shadow-sm border border-default-100">
-        <CardBody className="p-5">
-          <CheckboxGroup
-            label="Mostrar eventos"
-            orientation="horizontal"
-            value={visibleTypes}
-            onValueChange={setVisibleTypes}
-            classNames={{ label: 'text-sm font-medium text-default-700 mb-3' }}
-          >
-            <Checkbox value="degree" classNames={{ label: 'text-sm' }}>
-              <span className="flex items-center gap-2">
-                <GraduationCap className="w-4 h-4 text-secondary-500" /> Formação
-              </span>
-            </Checkbox>
-            <Checkbox value="dissertation" classNames={{ label: 'text-sm' }}>
-              <span className="flex items-center gap-2">
-                <FileText className="w-4 h-4 text-primary-500" /> Dissertações
-              </span>
-            </Checkbox>
-            <Checkbox value="employment" classNames={{ label: 'text-sm' }}>
-              <span className="flex items-center gap-2">
-                <Building2 className="w-4 h-4 text-success-500" /> Emprego
-              </span>
-            </Checkbox>
-          </CheckboxGroup>
-        </CardBody>
-      </Card>
+      <div className="bg-[#1a1b26] border border-white/8 rounded-xl p-4">
+        <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-3">Mostrar eventos</p>
+        <div className="flex flex-wrap gap-2">
+          {(['degree', 'dissertation', 'employment', 'award'] as const).map((type) => {
+            const accent = eventAccent[type]
+            const Icon = eventIcons[type]
+            const active = visibleTypes.includes(type)
+            return (
+              <button
+                key={type}
+                type="button"
+                onClick={() => toggleType(type)}
+                className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors ${
+                  active ? `${accent.bg} ${accent.icon}` : 'bg-white/5 text-gray-600'
+                }`}
+              >
+                <Icon className="w-3.5 h-3.5" />
+                {accent.label}
+              </button>
+            )
+          })}
+        </div>
+      </div>
 
       {/* Timeline */}
       {events.length === 0 ? (
-        <div className="text-center py-16 text-default-500">
-          Nenhum evento para exibir. Tente selecionar mais tipos de evento.
+        <div className="text-center py-16 text-gray-600">
+          Nenhum evento para exibir.
         </div>
       ) : (
         <div className="relative">
-          {/* Timeline line */}
-          <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-default-200" />
+          <div className="absolute left-4 top-0 bottom-0 w-px bg-white/8" />
 
           {years.map((year, yearIndex) => (
             <div key={year} className="mb-8">
-              {/* Year marker */}
               <div className="flex items-center gap-4 mb-5">
-                <div className="w-9 h-9 rounded-full bg-default-100 flex items-center justify-center z-10 shadow-sm">
-                  <span className="text-sm font-bold text-default-600">{year}</span>
+                <div className="w-9 h-9 rounded-lg bg-[#1a1b26] border border-white/10 flex items-center justify-center z-10">
+                  <span className="text-sm font-bold text-gray-400 font-mono">{year}</span>
                 </div>
-                <div className="h-px flex-1 bg-default-200" />
+                <div className="h-px flex-1 bg-white/5" />
               </div>
 
-              {/* Events for this year */}
-              <div className="space-y-4 ml-14">
+              <div className="space-y-3 ml-14">
                 {groupedEvents[year].map((event, eventIndex) => {
                   const Icon = eventIcons[event.type]
-                  const color = eventColors[event.type]
+                  const accent = eventAccent[event.type]
 
                   return (
                     <motion.div
@@ -207,26 +178,21 @@ export function TimelineTab({ academic }: Props) {
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: yearIndex * 0.1 + eventIndex * 0.05 }}
                     >
-                      <Card className="shadow-sm border border-default-100">
-                        <CardBody className="flex-row gap-4 items-start p-4">
-                          <div className={`p-2.5 rounded-lg ${eventBgClasses[event.type]}`}>
-                            <Icon className={`w-5 h-5 ${eventIconClasses[event.type]}`} />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <h4 className="font-medium line-clamp-2 text-base">{event.title}</h4>
-                            <p className="text-sm text-default-500 mt-1">{event.subtitle}</p>
-                            {event.details && (
-                              <p className="text-sm text-default-400 mt-2">{event.details}</p>
-                            )}
-                          </div>
-                          <Chip variant="flat" color={color} classNames={{ base: 'px-3 py-1', content: 'text-sm' }}>
-                            {event.type === 'degree' && 'Formação'}
-                            {event.type === 'dissertation' && 'Dissertação'}
-                            {event.type === 'employment' && 'Emprego'}
-                            {event.type === 'award' && 'Prêmio'}
-                          </Chip>
-                        </CardBody>
-                      </Card>
+                      <div className="bg-[#1a1b26] border border-white/8 rounded-xl p-4 flex gap-4 items-start">
+                        <div className={`p-2 rounded-lg ${accent.bg}`}>
+                          <Icon className={`w-4 h-4 ${accent.icon}`} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <h4 className="font-medium line-clamp-2 text-sm text-gray-200">{event.title}</h4>
+                          <p className="text-sm text-gray-500 mt-1">{event.subtitle}</p>
+                          {event.details && (
+                            <p className="text-sm text-gray-600 mt-1">{event.details}</p>
+                          )}
+                        </div>
+                        <span className={`shrink-0 text-xs px-2 py-0.5 rounded font-mono ${accent.bg} ${accent.icon}`}>
+                          {accent.label}
+                        </span>
+                      </div>
                     </motion.div>
                   )
                 })}
